@@ -2200,6 +2200,69 @@ def release_restart_dead_ball_on_control(
     return output.astype("<U1")
 
 
+def strict_set_piece_dead_ball_smoothing(
+    features: pd.DataFrame,
+    base_labels: np.ndarray,
+    *,
+    minimum_anchor_confidence: float = 0.85,
+) -> np.ndarray:
+    """Hold Smart-Tag set-piece context as D until restart release evidence.
+
+    Smart Tagging identifies the broad corner, goal-kick, free-kick, or
+    throw-in context.  It is not an exact whistle or kick frame, so a strict
+    experiment should not copy H/A observations into the preparation interval
+    or create short ``D`` sandwiches from intermittent tracking.  The interval
+    remains D until a kick-departure/goal-kick release or a reliable live-ball
+    anchor is observed; the existing labels are then restored after that point.
+    """
+    output = np.asarray(base_labels, dtype="<U1").copy()
+    n_frames = len(features)
+    in_play = graded_mask(n_frames)
+    restart_type = features.get("restart_type", pd.Series("", index=features.index)).fillna("").astype(str).to_numpy()
+    set_piece_types = {"Corner Kick", "Goal Kick", "Free Kick", "Throw-in", "Throw In", "Throw-in Kick"}
+    context = in_play & np.isin(restart_type, list(set_piece_types))
+    anchor = features.get(
+        "selected_anchor_team", features.get("anchor_team", pd.Series(None, index=features.index))
+    ).to_numpy(object)
+    confidence = pd.to_numeric(
+        features.get(
+            "selected_anchor_confidence",
+            features.get("anchor_confidence_score", pd.Series(0.0, index=features.index)),
+        ),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    reliable = np.isin(anchor, ["H", "A"]) & (confidence >= float(minimum_anchor_confidence))
+    departure = features.get(
+        "kick_departure_candidate", pd.Series(False, index=features.index)
+    ).fillna(False).to_numpy(bool).copy()
+    departure |= features.get(
+        "goal_kick_release_candidate", pd.Series(False, index=features.index)
+    ).fillna(False).to_numpy(bool)
+    live = features.get(
+        "restart_live_boundary_anchor",
+        features.get("restart_ball_active", pd.Series(False, index=features.index)),
+    ).fillna(False).to_numpy(bool)
+    release = departure | (live & reliable)
+
+    start = 0
+    while start < n_frames:
+        if not context[start]:
+            start += 1
+            continue
+        end = start + 1
+        while end < n_frames and context[end]:
+            end += 1
+        output[start:end] = "D"
+        release_positions = np.flatnonzero(release[start:end])
+        if release_positions.size:
+            release_at = start + int(release_positions[0])
+            output[release_at:end] = base_labels[release_at:end]
+        start = end
+
+    output[~in_play] = "X"
+    return output.astype("<U1")
+
+
 def hierarchical_restart_fill_labels(
     features: pd.DataFrame,
     base_labels: np.ndarray,

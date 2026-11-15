@@ -22,6 +22,7 @@ from possession.decoder_experiments import (
     literal_out_of_bounds_dead_ball_evidence,
     release_restart_dead_ball_on_control,
     resolve_aligned_reception_switch,
+    strict_set_piece_dead_ball_smoothing,
 )
 from possession.scenario_decoder import decode_scenario_labels
 from possession.sequence_models import (
@@ -115,6 +116,13 @@ def available_pipeline_specs() -> dict[str, PipelineSpec]:
             name="literal_out_of_bounds_diagnostic",
             transition_rule="none",
             use_literal_out_of_bounds=True,
+        ),
+        "strict_set_piece_deadball": PipelineSpec(
+            name="strict_set_piece_deadball",
+            use_dead_ball_boundary=True,
+            transition_rule="aligned_reception",
+            use_physics_veto=True,
+            protect_dead_ball=False,
         ),
     }
 
@@ -239,6 +247,12 @@ def apply_pipeline_spec(
             labels,
             minimum_run_frames=int(evidence["minimum_out_of_bounds_run_frames"]),
             boundary_tolerance=float(evidence["out_of_bounds_boundary_tolerance"]),
+        )
+    if spec.name == "strict_set_piece_deadball":
+        labels = strict_set_piece_dead_ball_smoothing(
+            features,
+            labels,
+            minimum_anchor_confidence=0.85,
         )
     if spec.protect_dead_ball and "smart_set_piece" in features:
         set_piece = features["smart_set_piece"].fillna(False).to_numpy(bool)

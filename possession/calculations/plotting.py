@@ -675,6 +675,20 @@ def plot_timeline_window(
         if smart_mask.any():
             ax.scatter(x[smart_mask], np.full(smart_mask.sum(), 0.36), s=12,
                        marker="s", color="#ff7f0e", label="Smart Tag context")
+    restart_colors = {
+        "Corner Kick": "#984ea3",
+        "Goal Kick": "#377eb8",
+        "Free Kick": "#e41a1c",
+        "Throw-in": "#4daf4a",
+        "Throw In": "#4daf4a",
+        "Throw-in Kick": "#4daf4a",
+    }
+    if "restart_type" in window:
+        for restart, color in restart_colors.items():
+            mask = window["restart_type"].eq(restart).to_numpy()
+            if mask.any():
+                ax.scatter(x[mask], np.full(mask.sum(), 0.50), s=16,
+                           marker="s", color=color, label=f"Smart Tag: {restart}")
     if "transition_anchor" in window:
         mask = window["transition_anchor"].fillna(False).to_numpy(bool)
         ax.scatter(x[mask], np.full(mask.sum(), 1.42), marker="v", s=55,
