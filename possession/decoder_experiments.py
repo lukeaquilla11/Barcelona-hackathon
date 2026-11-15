@@ -375,6 +375,9 @@ def classify_scenarios(
         features.get("ball_acceleration_mps2", pd.Series(np.nan, index=features.index)),
         errors="coerce",
     ).to_numpy(float)
+    foul_stoppage = features.get(
+        "foul_stoppage_candidate", pd.Series(False, index=features.index)
+    ).to_numpy(bool)
 
     scenarios = np.full(len(features), "UNKNOWN", dtype=object)
     slow_dead = set_piece & (np.nan_to_num(speed, nan=0.0) <= 1.0)
@@ -517,6 +520,11 @@ def classify_scenarios(
     )
     scenarios[pressured] = "PRESSURED_CONTROL"
 
+    # Keep this derived stoppage context more specific than generic contest,
+    # pressure, or transition evidence. It remains a candidate, not a foul
+    # label and never overrides hard dead-ball or tagged restart context.
+    scenarios[foul_stoppage & ~slow_dead & ~restart_context] = "FOUL_STOPPAGE_CANDIDATE"
+
     # A sign change in the team distance margin is a transition candidate,
     # not proof of a possession switch.  It identifies where the temporal
     # decoder should inspect the surrounding episode more carefully.
@@ -528,6 +536,7 @@ def classify_scenarios(
             scenarios,
             [
                 "DEAD", "RESTART_CONTEXT", "RESTART_LIVE_BOUNDARY", "OCCLUDED",
+                "FOUL_STOPPAGE_CANDIDATE",
                 "TRACKING_ARTIFACT", "DEFLECTION_CANDIDATE", "MISCONTROL_CANDIDATE",
             ],
         )
@@ -898,6 +907,12 @@ def scenario_confidence_scores(features: pd.DataFrame) -> pd.DataFrame:
     )
     out["contest_score"] = np.clip(contest_score, 0.0, 1.0)
     out["state_score_CONTESTED"] = np.where(context == "CONTESTED", np.maximum(0.8, out["contest_score"]), out["contest_score"])
+    foul_score = pd.to_numeric(
+        out.get("foul_stoppage_confidence", pd.Series(0.0, index=out.index)), errors="coerce"
+    ).fillna(0.0).to_numpy(float)
+    out["state_score_FOUL_STOPPAGE_CANDIDATE"] = np.where(
+        context == "FOUL_STOPPAGE_CANDIDATE", np.maximum(0.8, foul_score), foul_score
+    )
     out["state_score_OCCLUDED"] = np.where(missing, 1.0, 0.0)
     score_columns = [column for column in out.columns if column.startswith("state_score_")]
     scores = out[score_columns].to_numpy(float)

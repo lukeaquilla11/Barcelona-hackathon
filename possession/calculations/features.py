@@ -20,6 +20,7 @@ from possession.temporal_rules import (
     add_anchor_forecast_features,
     add_boundary_anchor_features,
     add_first_time_pass_features,
+    add_foul_stoppage_evidence,
     add_reachability_features,
     add_reception_episode_features,
     add_reception_geometry_features,
@@ -73,6 +74,8 @@ def build_engineered_features(
     temporal = add_first_time_pass_features(temporal)
     temporal = add_reception_episode_features(temporal)
     temporal = add_anchor_forecast_features(temporal, rules)
+    temporal = add_missing_ball_case_features(temporal, rules)
+    temporal = add_foul_stoppage_evidence(temporal)
     temporal["graded"] = graded_mask(len(temporal))
     temporal["scenario_context"] = classify_scenarios(temporal)
     temporal["scenario_context_causal"] = classify_scenarios(temporal, causal=True)
@@ -84,6 +87,5 @@ def build_engineered_features(
         temporal, slot_team_map(paths["atd_meta"]),
         radius_m=float(rules.get("pitch", {}).get("scenario_player_radius_m", 12.0)),
     )
-    temporal = add_missing_ball_case_features(temporal, rules)
     # Expose the same H/A/D evidence vector to every decoder and notebook.
     return scenario_confidence_scores(temporal)

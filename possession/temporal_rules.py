@@ -596,6 +596,107 @@ def add_missing_ball_case_features(
     return out
 
 
+def add_foul_stoppage_evidence(
+    features: pd.DataFrame,
+    *,
+    lookback_frames: int = 25,
+    lookforward_frames: int = 25,
+    slow_activity_mps: float = 1.5,
+    convergence_density: float = 2.0,
+    convergence_distance_m: float = 4.0,
+) -> pd.DataFrame:
+    """Add an uncertain, bidirectional foul/stoppage evidence proxy.
+
+    Tracking data cannot observe a referee decision or prove physical contact.
+    This function therefore reports ``FOUL_STOPPAGE_CANDIDATE`` evidence only.
+    It combines three inspectable patterns across a bounded look-back/look-
+    forward window: a possible opponent close-and-switch, convergence followed
+    by low activity without a clear control signal, and a local restart after a
+    ball disappearance.  The output is scenario evidence, never an H/A/D label.
+    """
+    out = features.copy()
+    n = len(out)
+    for column in (
+        "foul_stoppage_turnover_candidate",
+        "foul_stoppage_convergence_candidate",
+        "foul_stoppage_restart_candidate",
+        "foul_stoppage_candidate",
+    ):
+        out[column] = False
+    out["foul_stoppage_confidence"] = 0.0
+    if n == 0:
+        return out
+
+    def numeric(column: str) -> pd.Series:
+        return pd.to_numeric(out.get(column, pd.Series(np.nan, index=out.index)), errors="coerce")
+
+    closest = out.get(
+        "closest_team", pd.Series(None, index=out.index, dtype=object)
+    ).fillna("").astype(str)
+    speed = numeric("ball_speed_derived_mps")
+    activity = numeric("player_activity_median_mps")
+    density = numeric("candidate_opponent_density_5m")
+    nearest_h = numeric("nearest_h_distance_m")
+    nearest_a = numeric("nearest_a_distance_m")
+    h_closing = numeric("nearest_h_closing_rate_mps")
+    a_closing = numeric("nearest_a_closing_rate_mps")
+    missing = numeric("ball_x").isna() | numeric("ball_y").isna()
+    low_activity = activity.le(slow_activity_mps).fillna(False)
+    convergence = density.ge(convergence_density).fillna(False) | (
+        nearest_h.le(convergence_distance_m).fillna(False)
+        & nearest_a.le(convergence_distance_m).fillna(False)
+    )
+    observed_switch = closest.isin(["H", "A"]) & closest.ne(closest.shift())
+    observed_switch &= closest.shift().isin(["H", "A"])
+    closing = pd.Series(
+        np.where(closest.eq("H"), a_closing, np.where(closest.eq("A"), h_closing, np.nan)),
+        index=out.index,
+    )
+    close_and_switch = observed_switch & closing.ge(0.5).fillna(False)
+
+    # Centered windows are deliberate: this is an offline analysis signal for
+    # the scenario notebook, not a causal live decision.
+    window = max(1, int(lookback_frames + lookforward_frames + 1))
+    converged_then_slow = (
+        convergence.astype(float).rolling(window, center=True, min_periods=1).max().gt(0)
+        & low_activity.astype(float).rolling(window, center=True, min_periods=1).mean().ge(0.35)
+    )
+    no_clear_control = ~out.get(
+        "genuine_reception_anchor", pd.Series(False, index=out.index)
+    ).fillna(False).astype(bool)
+    no_clear_control &= ~out.get(
+        "restart_live_control_candidate", pd.Series(False, index=out.index)
+    ).fillna(False).astype(bool)
+    convergence_candidate = converged_then_slow & no_clear_control
+
+    local_restart = (
+        out.get("gap_same_area_low_motion_dead_candidate", pd.Series(False, index=out.index)).fillna(False)
+        | out.get("gap_out_of_play_dead_candidate", pd.Series(False, index=out.index)).fillna(False)
+        | out.get("restart_low_motion_cluster_candidate", pd.Series(False, index=out.index)).fillna(False)
+        | out.get("restart_ball_appears_while_clustered", pd.Series(False, index=out.index)).fillna(False)
+    ).astype(bool)
+    local_restart |= missing & low_activity
+    local_restart = local_restart.astype(float).rolling(window, center=True, min_periods=1).max().gt(0)
+
+    # Require at least two distinct ideas. The possible close-and-switch path
+    # is kept separate because it may simply be a tackle or ordinary turnover.
+    evidence_count = close_and_switch.astype(int) + convergence_candidate.astype(int) + local_restart.astype(int)
+    candidate = evidence_count.ge(2) & ~out.get(
+        "smart_restart_type", pd.Series(None, index=out.index)
+    ).fillna("").astype(str).str.contains("Kick Off", case=False, na=False)
+    confidence = (
+        0.35 * close_and_switch.astype(float)
+        + 0.35 * convergence_candidate.astype(float)
+        + 0.30 * local_restart.astype(float)
+    ).clip(0.0, 1.0)
+    out["foul_stoppage_turnover_candidate"] = close_and_switch.to_numpy(bool)
+    out["foul_stoppage_convergence_candidate"] = convergence_candidate.to_numpy(bool)
+    out["foul_stoppage_restart_candidate"] = local_restart.to_numpy(bool)
+    out["foul_stoppage_candidate"] = candidate.to_numpy(bool)
+    out["foul_stoppage_confidence"] = confidence.to_numpy(float)
+    return out
+
+
 def add_reachability_features(
     features: pd.DataFrame,
     team_by_slot: dict[int, str],

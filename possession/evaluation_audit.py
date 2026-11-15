@@ -119,6 +119,9 @@ def classify_prediction_errors(
     frame_errors["match_clock_s"] = np.nan
     feature_columns = [
         "smart_context", "smart_restart_type", "smart_event_count", "scenario_context",
+        "foul_stoppage_candidate", "foul_stoppage_confidence",
+        "foul_stoppage_turnover_candidate", "foul_stoppage_convergence_candidate",
+        "foul_stoppage_restart_candidate",
         "closest_team", "selected_anchor_team", "transition_anchor",
         "selected_anchor_confidence", "scenario_confidence", "scenario_margin",
         "controlled_reception_signal_score",
