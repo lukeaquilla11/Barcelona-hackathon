@@ -7,11 +7,12 @@ Read the notebooks in this order:
 2. [02_feature_engineering.ipynb](./02_feature_engineering.ipynb) — modular geometry, speed, acceleration, distance-per-kick, and missing-ball signals.
 3. [03_scenario_engineering.ipynb](./03_scenario_engineering.ipynb) — dead ball, control, flight, reception, long-ball and contested scenarios.
 4. [04_deadball_setpieces.ipynb](./04_deadball_setpieces.ipynb) — focused restart boundary study for goal kicks, free kicks, corners, throw-ins, and kickoffs.
-5. [05_anchors_rulebook.ipynb](./05_anchors_rulebook.ipynb) — observable evidence for easy H/A/D anchors.
-6. [06_transition_markers.ipynb](./06_transition_markers.ipynb) — dead-ball/restart handling, transition windows, and unresolved contest evidence.
-7. [07_viterbi_model.ipynb](./07_viterbi_model.ipynb) — sequence decoding after evidence engineering.
-8. [08_run_pipeline.ipynb](./08_run_pipeline.ipynb) — reproducible pipeline execution.
-9. [09_experimental_results.ipynb](./09_experimental_results.ipynb) — comparison of models, scenarios and rejected experiments.
+5. [04b_ball_missing_player_analysis.ipynb](./04b_ball_missing_player_analysis.ipynb) — missing-ball and missing-player observations, confidence signals, and case diagrams.
+6. [05_anchors_rulebook.ipynb](./05_anchors_rulebook.ipynb) — observable evidence for easy H/A/D anchors.
+7. [06_transition_markers.ipynb](./06_transition_markers.ipynb) — dead-ball/restart handling, transition windows, and unresolved contest evidence.
+8. [07_viterbi_model.ipynb](./07_viterbi_model.ipynb) — sequence decoding after evidence engineering.
+9. [08_run_pipeline.ipynb](./08_run_pipeline.ipynb) — reproducible pipeline execution.
+10. [09_experimental_results.ipynb](./09_experimental_results.ipynb) — comparison of models, scenarios and rejected experiments.
 
 Core conclusion: the observations are useful; mapping them to confidence and
 H/A/D labels is the bottleneck. No fixed D hold duration is used.
