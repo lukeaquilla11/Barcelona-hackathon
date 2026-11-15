@@ -693,6 +693,17 @@ def plot_timeline_window(
         mask = window["transition_anchor"].fillna(False).to_numpy(bool)
         ax.scatter(x[mask], np.full(mask.sum(), 1.42), marker="v", s=55,
                    color="#d62728", label="transition anchor")
+    if "control_deceleration_anchor" in window:
+        mask = window["control_deceleration_anchor"].fillna(False).to_numpy(bool)
+        if mask.any():
+            ax.scatter(x[mask], np.full(mask.sum(), 1.52), marker="o", s=28,
+                       facecolors="none", edgecolors="#006d2c", linewidths=1.2,
+                       label="deceleration control anchor")
+    if "deflection_without_control_candidate" in window:
+        mask = window["deflection_without_control_candidate"].fillna(False).to_numpy(bool)
+        if mask.any():
+            ax.scatter(x[mask], np.full(mask.sum(), 0.58), marker="x", s=24,
+                       color="#756bb1", label="deflection without control")
     if "ball_x" in window:
         missing = window["ball_x"].isna() | window["ball_y"].isna()
         for row in window.loc[missing].itertuples():

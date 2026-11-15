@@ -19,6 +19,7 @@ from possession.temporal_rules import (
     add_anchor_features,
     add_anchor_forecast_features,
     add_boundary_anchor_features,
+    add_control_event_anchor_features,
     add_first_time_pass_features,
     add_foul_stoppage_evidence,
     add_goal_kick_features,
@@ -72,6 +73,7 @@ def build_engineered_features(
     temporal = add_boundary_anchor_features(temporal, rules)
     temporal = add_goal_kick_features(temporal, slot_team_map(paths["atd_meta"]))
     temporal = add_pipeline_evidence_features(temporal, rules, slot_team_map(paths["atd_meta"]))
+    temporal = add_control_event_anchor_features(temporal, rules)
     temporal = add_reception_outcome_features(temporal)
     temporal = add_reception_geometry_features(temporal)
     temporal = add_reception_signal_features(temporal, rules=rules)

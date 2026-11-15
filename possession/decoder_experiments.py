@@ -2263,6 +2263,57 @@ def strict_set_piece_dead_ball_smoothing(
     return output.astype("<U1")
 
 
+def apply_control_event_anchor_experiment(
+    features: pd.DataFrame,
+    base_labels: np.ndarray,
+    *,
+    maximum_bridge_frames: int = 75,
+    minimum_control_anchor_confidence: float = 0.65,
+) -> np.ndarray:
+    """Test pass/deflection handling with departure and control anchors.
+
+    A departure assigns only temporary team evidence. A deflection does not
+    switch possession. The switch is accepted at the first subsequent
+    deceleration-based control anchor, which lets the preceding team retain
+    the phase until the opponent actually controls the ball.
+    """
+    output = np.asarray(base_labels, dtype="<U1").copy()
+    graded = graded_mask(len(features))
+    departure_team = features.get("kick_departure_team", pd.Series(None, index=features.index)).to_numpy(object)
+    departure = features.get("kick_departure_candidate", pd.Series(False, index=features.index)).fillna(False).to_numpy(bool)
+    control = features.get("control_deceleration_anchor", pd.Series(False, index=features.index)).fillna(False).to_numpy(bool).copy()
+    control_team = features.get("control_deceleration_anchor_team", pd.Series(None, index=features.index)).to_numpy(object)
+    control_confidence = pd.to_numeric(
+        features.get("control_deceleration_anchor_confidence", pd.Series(0.0, index=features.index)),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    control &= control_confidence >= float(minimum_control_anchor_confidence)
+    deflection = features.get("deflection_without_control_candidate", pd.Series(False, index=features.index)).fillna(False).to_numpy(bool)
+    held_team = None
+    bridge_start = None
+    for index in range(len(output)):
+        if not graded[index] or output[index] in {"D", "X"}:
+            continue
+        if control[index] and control_team[index] in {"H", "A"}:
+            output[index] = control_team[index]
+            held_team = control_team[index]
+            bridge_start = None
+            continue
+        if departure[index] and departure_team[index] in {"H", "A"}:
+            held_team = departure_team[index]
+            bridge_start = index
+            output[index] = held_team
+            continue
+        if held_team in {"H", "A"} and bridge_start is not None:
+            within_bridge = index - bridge_start <= int(maximum_bridge_frames)
+            if within_bridge and deflection[index]:
+                output[index] = held_team
+            elif not within_bridge:
+                held_team = None
+                bridge_start = None
+    return output.astype("<U1")
+
+
 def hierarchical_restart_fill_labels(
     features: pd.DataFrame,
     base_labels: np.ndarray,

@@ -1518,6 +1518,53 @@ def apply_anchor_hierarchy(
     return out
 
 
+def add_control_event_anchor_features(
+    features: pd.DataFrame,
+    rules: dict[str, Any] | None = None,
+    *,
+    control_distance_m: float = 2.5,
+    control_speed_mps: float | None = None,
+    minimum_post_control_fraction: float = 0.60,
+) -> pd.DataFrame:
+    """Expose deceleration-based control anchors separately from deflections.
+
+    A sharp acceleration identifies a departure/pass candidate, but it does
+    not identify the receiving team: an opponent can deflect the ball. A
+    sharp speed drop near a player, followed by short persistence near that
+    player, is stronger evidence that the player controlled the ball. The
+    result is an observation with confidence, not a ground-truth label.
+    """
+    out = features.copy()
+    speed = _numeric(out, "ball_speed_derived_mps")
+    speed_drop = _numeric(out, "ball_speed_drop_mps")
+    closest_distance = _numeric(out, "closest_distance_m")
+    closest_team = out.get("closest_team", pd.Series(None, index=out.index, dtype=object)).fillna("").astype(str)
+    missing = _numeric(out, "ball_x").isna() | _numeric(out, "ball_y").isna()
+    resolved_rules = rules or load_rules()
+    threshold = max(2.0, float(_value(resolved_rules, "reception", "minimum_speed_drop_mps")))
+    if control_speed_mps is None:
+        control_speed_mps = float(_value(resolved_rules, "anchors", "local_control_speed_max_mps"))
+    sharp_deceleration = speed_drop.ge(threshold) & ~missing
+    near_player = closest_distance.le(float(control_distance_m))
+    low_post_speed = speed.le(float(control_speed_mps))
+    post_h = closest_team.eq("H")[::-1].rolling(5, min_periods=1).mean()[::-1]
+    post_a = closest_team.eq("A")[::-1].rolling(5, min_periods=1).mean()[::-1]
+    post_fraction = pd.Series(np.where(closest_team.eq("H"), post_h, np.where(closest_team.eq("A"), post_a, 0.0)), index=out.index)
+    control_anchor = sharp_deceleration & near_player & low_post_speed & post_fraction.ge(float(minimum_post_control_fraction))
+    closeness = (1.0 - closest_distance.clip(lower=0.0, upper=float(control_distance_m)) / float(control_distance_m)).fillna(0.0)
+    deceleration_strength = (speed_drop / max(threshold * 2.0, 1.0)).clip(lower=0.0, upper=1.0).fillna(0.0)
+    confidence = (0.45 * deceleration_strength + 0.30 * closeness + 0.25 * post_fraction).clip(0.0, 1.0)
+    out["control_deceleration_anchor"] = control_anchor
+    out["control_deceleration_anchor_team"] = closest_team.where(control_anchor)
+    out["control_deceleration_anchor_confidence"] = confidence.where(control_anchor, 0.0)
+    out["deflection_without_control_candidate"] = (
+        out.get("deflection_direction_change_veto", pd.Series(False, index=out.index)).fillna(False).astype(bool)
+        & ~control_anchor
+    )
+    out["post_control_anchor_fraction"] = post_fraction
+    return out
+
+
 def add_special_anchor_features(
     features: pd.DataFrame,
     events: list[dict[str, Any]],

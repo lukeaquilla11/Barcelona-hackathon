@@ -22,6 +22,7 @@ from possession.decoder_experiments import (
     literal_out_of_bounds_dead_ball_evidence,
     release_restart_dead_ball_on_control,
     resolve_aligned_reception_switch,
+    apply_control_event_anchor_experiment,
     strict_set_piece_dead_ball_smoothing,
 )
 from possession.scenario_decoder import decode_scenario_labels
@@ -49,6 +50,7 @@ class PipelineSpec:
     decoder: str = "none"
     protect_dead_ball: bool = True
     protect_outside_graded: bool = True
+    minimum_control_anchor_confidence: float = 0.65
 
 
 def available_pipeline_specs() -> dict[str, PipelineSpec]:
@@ -119,6 +121,29 @@ def available_pipeline_specs() -> dict[str, PipelineSpec]:
         ),
         "strict_set_piece_deadball": PipelineSpec(
             name="strict_set_piece_deadball",
+            use_dead_ball_boundary=True,
+            transition_rule="aligned_reception",
+            use_physics_veto=True,
+            protect_dead_ball=False,
+        ),
+        "control_event_anchor_experiment": PipelineSpec(
+            name="control_event_anchor_experiment",
+            use_dead_ball_boundary=True,
+            transition_rule="aligned_reception",
+            use_physics_veto=True,
+            protect_dead_ball=False,
+            minimum_control_anchor_confidence=0.65,
+        ),
+        "control_event_anchor_strict": PipelineSpec(
+            name="control_event_anchor_strict",
+            use_dead_ball_boundary=True,
+            transition_rule="aligned_reception",
+            use_physics_veto=True,
+            protect_dead_ball=False,
+            minimum_control_anchor_confidence=0.85,
+        ),
+        "strict_control_event_anchor_experiment": PipelineSpec(
+            name="strict_control_event_anchor_experiment",
             use_dead_ball_boundary=True,
             transition_rule="aligned_reception",
             use_physics_veto=True,
@@ -254,6 +279,14 @@ def apply_pipeline_spec(
             labels,
             minimum_anchor_confidence=0.85,
         )
+    if spec.name in {"control_event_anchor_experiment", "strict_control_event_anchor_experiment"}:
+        labels = apply_control_event_anchor_experiment(
+            features,
+            labels,
+            minimum_control_anchor_confidence=spec.minimum_control_anchor_confidence,
+        )
+    if spec.name == "strict_control_event_anchor_experiment":
+        labels = strict_set_piece_dead_ball_smoothing(features, labels, minimum_anchor_confidence=0.85)
     if spec.protect_dead_ball and "smart_set_piece" in features:
         set_piece = features["smart_set_piece"].fillna(False).to_numpy(bool)
         labels[graded & set_piece] = "D"
