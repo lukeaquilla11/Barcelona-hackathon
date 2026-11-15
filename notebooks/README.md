@@ -6,11 +6,12 @@ Read the notebooks in this order:
 1. [01_eda.ipynb](./01_eda.ipynb) — data, public five-minute scope, Smart Tagging value and limits.
 2. [02_feature_engineering.ipynb](./02_feature_engineering.ipynb) — modular geometry, speed, acceleration, distance-per-kick, and missing-ball signals.
 3. [03_scenario_engineering.ipynb](./03_scenario_engineering.ipynb) — dead ball, control, flight, reception, long-ball and contested scenarios.
-4. [04_anchors_rulebook.ipynb](./04_anchors_rulebook.ipynb) — observable evidence for easy H/A/D anchors.
-5. [05_transition_markers.ipynb](./05_transition_markers.ipynb) — dead-ball/restart handling, transition windows, and unresolved contest evidence.
-6. [06_viterbi_model.ipynb](./06_viterbi_model.ipynb) — sequence decoding after evidence engineering.
-7. [07_run_pipeline.ipynb](./07_run_pipeline.ipynb) — reproducible pipeline execution.
-8. [08_experimental_results.ipynb](./08_experimental_results.ipynb) — comparison of models, scenarios and rejected experiments.
+4. [04_deadball_setpieces.ipynb](./04_deadball_setpieces.ipynb) — focused restart boundary study for goal kicks, free kicks, corners, throw-ins, and kickoffs.
+5. [05_anchors_rulebook.ipynb](./05_anchors_rulebook.ipynb) — observable evidence for easy H/A/D anchors.
+6. [06_transition_markers.ipynb](./06_transition_markers.ipynb) — dead-ball/restart handling, transition windows, and unresolved contest evidence.
+7. [07_viterbi_model.ipynb](./07_viterbi_model.ipynb) — sequence decoding after evidence engineering.
+8. [08_run_pipeline.ipynb](./08_run_pipeline.ipynb) — reproducible pipeline execution.
+9. [09_experimental_results.ipynb](./09_experimental_results.ipynb) — comparison of models, scenarios and rejected experiments.
 
 Core conclusion: the observations are useful; mapping them to confidence and
 H/A/D labels is the bottleneck. No fixed D hold duration is used.
@@ -35,6 +36,8 @@ features, labels = run_decision_pipeline(features, spec=model)
 ```
 
 Plots are audit views over the same feature table. A visual observation is not a hand-written label.
+
+The modelling distinction is deliberate: `H`, `A`, and `D` are the hidden possession states. Scenario names such as `CONTROLLED`, `CONTESTED`, `BALL_IN_FLIGHT`, `LONG_BALL`, and `RESTART` describe observable evidence. The decoder maps those observations to confidence over the hidden states; scenarios are not extra labels.
 
 ## Implementation
 
