@@ -219,6 +219,19 @@ def add_context_features(frame_table: pd.DataFrame, events: list[dict]) -> pd.Da
     """
     out = frame_table.copy()
     out["smart_event_count"] = _interval_count(events, len(out))
+    smart_context = [[] for _ in range(len(out))]
+    for event in events:
+        code = str(event.get("code") or "").strip()
+        if not code:
+            continue
+        event_type = str((event.get("tags") or {}).get("Type") or "").strip()
+        context = f"{code} [{event_type}]" if event_type else code
+        start = max(0, int(event["start_frame"]))
+        end = min(len(out), int(event["end_frame"]) + 1)
+        for index in range(start, end):
+            if context not in smart_context[index]:
+                smart_context[index].append(context)
+    out["smart_context"] = ["; ".join(values) if values else None for values in smart_context]
     normalised_codes = {
         str(event.get("code") or "").strip().lower()
         for event in events

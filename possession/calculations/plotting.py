@@ -670,6 +670,11 @@ def plot_timeline_window(
             if mask.any():
                 ax.scatter(x[mask], np.full(mask.sum(), 0.18), s=14,
                            color=color, label=f"scenario: {scenario}")
+    if "smart_context" in window:
+        smart_mask = window["smart_context"].notna().to_numpy()
+        if smart_mask.any():
+            ax.scatter(x[smart_mask], np.full(smart_mask.sum(), 0.36), s=12,
+                       marker="s", color="#ff7f0e", label="Smart Tag context")
     if "transition_anchor" in window:
         mask = window["transition_anchor"].fillna(False).to_numpy(bool)
         ax.scatter(x[mask], np.full(mask.sum(), 1.42), marker="v", s=55,

@@ -105,6 +105,8 @@ def classify_prediction_errors(
         })
 
     frame_errors = aligned.loc[wrong].copy()
+    frame_errors["frame"] = frame_errors.index.astype(int)
+    frame_errors = frame_errors.reset_index(drop=True)
     frame_errors["error_type"] = np.select(
         [
             frame_errors["ground_truth"].eq("D") & frame_errors["prediction"].isin(["H", "A"]),
@@ -114,10 +116,10 @@ def classify_prediction_errors(
         ["missed_deadball", "overheld_deadball", "wrong_team"],
         default="state_or_transition_boundary_error",
     )
-    frame_errors["frame"] = frame_errors.index.astype(int)
     frame_errors["match_clock_s"] = np.nan
     feature_columns = [
-        "scenario_context", "closest_team", "selected_anchor_team", "transition_anchor",
+        "smart_context", "smart_restart_type", "smart_event_count", "scenario_context",
+        "closest_team", "selected_anchor_team", "transition_anchor",
         "selected_anchor_confidence", "scenario_confidence", "scenario_margin",
         "controlled_reception_signal_score",
     ]
