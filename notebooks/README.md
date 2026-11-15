@@ -31,7 +31,7 @@ from possession.pipeline import build_evidence_table, detect_scenarios, run_deci
 
 features = build_evidence_table()
 features = detect_scenarios(features)
-model = select_model("aligned_physics_veto")
+model = select_model("evidence_bounded_deadball")
 features, labels = run_decision_pipeline(features, spec=model)
 ```
 
@@ -47,6 +47,11 @@ This is intentionally a decoder comparison: scenarios and anchors are still
 detected once and passed to every model.
 
 Plots are audit views over the same feature table. A visual observation is not a hand-written label.
+The reusable evidence timeline is `possession.calculations.plotting.plot_timeline_window()`;
+the composite pitch-plus-timeline view is `plot_evidence_window()`. They render match-clock time,
+nearest-team observations, selected anchors, scenario markers, missing-ball intervals, and an
+optional public ground-truth strip. Notebooks select the case window; they do not reimplement the
+plotting logic.
 
 The modelling distinction is deliberate: `H`, `A`, and `D` are the hidden possession states. Scenario names such as `CONTROLLED`, `CONTESTED`, `BALL_IN_FLIGHT`, `LONG_BALL`, and `RESTART` describe observable evidence. The decoder maps those observations to confidence over the hidden states; scenarios are not extra labels.
 

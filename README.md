@@ -11,6 +11,7 @@ The pipeline is intentionally thin. Use the public façade in `possession/pipeli
 - `select_model()` — choose one registered model specification, including the evaluated physics-veto candidate and the preserved `stage_hq_viterbi` diagnostic baseline;
 - `run_decision_pipeline()` — pass the feature table and scenario evidence to that selected model function;
 - `PipelineSpec` — declare the decision policy without duplicating implementation code.
+- `plot_timeline_window()` and `plot_evidence_window()` — render reusable audit views with match-clock axes, scenario/anchor evidence, and an optional public ground-truth strip.
 
 Lower-level calculations remain in `possession/calculations/`, scenario rules in `possession/scenarios/`, and model composition in `possession/models/`. The notebooks are presentation and audit clients of these helpers; they should not become a second implementation of the pipeline.
 
@@ -25,6 +26,12 @@ The pipeline keeps evidence construction separate from decision policy:
 5. **Evaluation layer** — write the selected submission and score it only when the appropriate ground truth is available.
 
 The runner is deliberately thin: it calls the reusable helpers, passes their shared evidence to one selected model policy, and returns frame-aligned labels. The notebooks are the organiser-facing explanation of the observations; helper modules contain the implementation.
+
+Visual checks are also helper-first. The evidence timeline is a plotting function in
+`possession/calculations/plotting.py`, not notebook-specific labelling logic. The notebooks
+choose the frame window and provide optional public ground truth; the helper renders the same
+observation lanes, scenario markers, missing-ball shading, anchor margin, and match-clock axis
+for every case.
 
 The `stage_hq_viterbi` option preserves the independently developed three-state
 Viterbi decoder for a like-for-like experiment. It uses the same canonical
