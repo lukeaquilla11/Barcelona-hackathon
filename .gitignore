@@ -10,6 +10,7 @@ cache/
 # local evaluation outputs and public labels
 evaluation/gt/
 evaluation/reports/
+evaluation/compare_results/
 
 # open Bundesliga downloads
 open_data/
