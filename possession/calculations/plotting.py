@@ -503,49 +503,16 @@ def plot_evidence_window(
         reference_frame=int(window.iloc[len(window) // 2]["frame"]),
         ax=pitch_ax,
     )
-    timeline_ax.set_title("Evidence timeline — observations, not hand-written labels")
-    _apply_frame_time_axis(
-        timeline_ax,
-        frame_to_match_clock=dict(zip(window["frame"].astype(int), window["match_clock_s"].astype(float)))
-        if "match_clock_s" in window else None,
+    # Keep the pitch-and-timeline composite on the same canonical timeline helper used by
+    # standalone evidence plots. This prevents the two views from drifting in labels, colours,
+    # match-clock formatting, missing-ball shading, or ground-truth rendering.
+    plot_timeline_window(
+        features,
+        start_frame,
+        end_frame,
+        ground_truth=ground_truth,
+        ax=timeline_ax,
     )
-    timeline_ax.set_yticks([0, 1, 1.78])
-    timeline_ax.set_yticklabels(["Away", "Home", "Ground truth"])
-    timeline_ax.set_ylim(-0.5, 2.1)
-    timeline_ax.grid(axis="x", alpha=0.2)
-    x = window["frame"].to_numpy()
-    for column, y, color, label in (
-        ("closest_team", 0.82, "#555555", "nearest-team observation"),
-        ("selected_anchor_team", 1.18, "#111111", "selected anchor"),
-    ):
-        if column not in window:
-            continue
-        values = window[column].map({"A": 0, "H": 1}).to_numpy(dtype=float)
-        timeline_ax.scatter(x, values * 0.28 + y - 0.14, s=10, color=color, label=label)
-    scenario_colors = {
-        "DEAD": "#e6ab02", "RESTART_LIVE_BOUNDARY": "#e6ab02",
-        "BALL_IN_FLIGHT": "#66a61e", "CONTESTED": "#e7298a",
-        "OCCLUDED": "#7570b3", "RECEPTION_CANDIDATE": "#d95f02",
-        "CONTROLLED": "#1b9e77", "PRESSURED_CONTROL": "#1b9e77",
-    }
-    if "scenario_context" in window:
-        for scenario, color in scenario_colors.items():
-            mask = window["scenario_context"].eq(scenario).to_numpy()
-            if mask.any():
-                timeline_ax.scatter(x[mask], np.full(mask.sum(), 0.18), s=14,
-                                    color=color, label=f"scenario: {scenario}")
-    if "transition_anchor" in window:
-        mask = window["transition_anchor"].fillna(False).to_numpy(bool)
-        timeline_ax.scatter(x[mask], np.full(mask.sum(), 1.42), marker="v", s=55,
-                            color="#d62728", label="transition anchor")
-    if "ball_x" in window:
-        missing = window["ball_x"].isna() | window["ball_y"].isna()
-        for row in window.loc[missing].itertuples():
-            timeline_ax.axvline(row.frame, color="#d95f02", alpha=0.08, linewidth=2)
-    _plot_anchor_margin(timeline_ax, window)
-    if ground_truth is not None:
-        _plot_ground_truth_strip(timeline_ax, window["frame"], ground_truth, y=1.64)
-    timeline_ax.legend(loc="upper left", bbox_to_anchor=(0, -0.22), ncol=3, fontsize=8)
     return fig, (pitch_ax, timeline_ax)
 
 
