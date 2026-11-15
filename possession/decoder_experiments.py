@@ -2269,6 +2269,7 @@ def apply_control_event_anchor_experiment(
     *,
     maximum_bridge_frames: int = 75,
     minimum_control_anchor_confidence: float = 0.65,
+    use_genuine_control_anchor: bool = False,
 ) -> np.ndarray:
     """Test pass/deflection handling with departure and control anchors.
 
@@ -2281,10 +2282,13 @@ def apply_control_event_anchor_experiment(
     graded = graded_mask(len(features))
     departure_team = features.get("kick_departure_team", pd.Series(None, index=features.index)).to_numpy(object)
     departure = features.get("kick_departure_candidate", pd.Series(False, index=features.index)).fillna(False).to_numpy(bool)
-    control = features.get("control_deceleration_anchor", pd.Series(False, index=features.index)).fillna(False).to_numpy(bool).copy()
-    control_team = features.get("control_deceleration_anchor_team", pd.Series(None, index=features.index)).to_numpy(object)
+    control_column = "genuine_control_deceleration_anchor" if use_genuine_control_anchor else "control_deceleration_anchor"
+    team_column = "genuine_control_deceleration_anchor_team" if use_genuine_control_anchor else "control_deceleration_anchor_team"
+    confidence_column = "genuine_control_deceleration_anchor_confidence" if use_genuine_control_anchor else "control_deceleration_anchor_confidence"
+    control = features.get(control_column, pd.Series(False, index=features.index)).fillna(False).to_numpy(bool).copy()
+    control_team = features.get(team_column, pd.Series(None, index=features.index)).to_numpy(object)
     control_confidence = pd.to_numeric(
-        features.get("control_deceleration_anchor_confidence", pd.Series(0.0, index=features.index)),
+        features.get(confidence_column, pd.Series(0.0, index=features.index)),
         errors="coerce",
     ).fillna(0.0).to_numpy(float)
     control &= control_confidence >= float(minimum_control_anchor_confidence)

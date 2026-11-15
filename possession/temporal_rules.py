@@ -1537,7 +1537,9 @@ def add_control_event_anchor_features(
     out = features.copy()
     speed = _numeric(out, "ball_speed_derived_mps")
     speed_drop = _numeric(out, "ball_speed_drop_mps")
+    pre_speed = speed.shift(1)
     closest_distance = _numeric(out, "closest_distance_m")
+    distance_margin = _numeric(out, "team_distance_margin_m").abs()
     closest_team = out.get("closest_team", pd.Series(None, index=out.index, dtype=object)).fillna("").astype(str)
     missing = _numeric(out, "ball_x").isna() | _numeric(out, "ball_y").isna()
     resolved_rules = rules or load_rules()
@@ -1551,12 +1553,24 @@ def add_control_event_anchor_features(
     post_a = closest_team.eq("A")[::-1].rolling(5, min_periods=1).mean()[::-1]
     post_fraction = pd.Series(np.where(closest_team.eq("H"), post_h, np.where(closest_team.eq("A"), post_a, 0.0)), index=out.index)
     control_anchor = sharp_deceleration & near_player & low_post_speed & post_fraction.ge(float(minimum_post_control_fraction))
+    recent_departure = out.get("kick_departure_candidate", pd.Series(False, index=out.index)).fillna(False).astype(bool)
+    recent_departure = recent_departure.rolling(15, min_periods=1).max().astype(bool)
+    preceding_flight = pre_speed.ge(4.0) | recent_departure
+    genuine_control = control_anchor & preceding_flight & distance_margin.ge(0.75)
     closeness = (1.0 - closest_distance.clip(lower=0.0, upper=float(control_distance_m)) / float(control_distance_m)).fillna(0.0)
     deceleration_strength = (speed_drop / max(threshold * 2.0, 1.0)).clip(lower=0.0, upper=1.0).fillna(0.0)
-    confidence = (0.45 * deceleration_strength + 0.30 * closeness + 0.25 * post_fraction).clip(0.0, 1.0)
+    confidence = (
+        0.35 * deceleration_strength
+        + 0.20 * closeness
+        + 0.25 * post_fraction
+        + 0.20 * preceding_flight.astype(float)
+    ).clip(0.0, 1.0)
     out["control_deceleration_anchor"] = control_anchor
     out["control_deceleration_anchor_team"] = closest_team.where(control_anchor)
     out["control_deceleration_anchor_confidence"] = confidence.where(control_anchor, 0.0)
+    out["genuine_control_deceleration_anchor"] = genuine_control
+    out["genuine_control_deceleration_anchor_team"] = closest_team.where(genuine_control)
+    out["genuine_control_deceleration_anchor_confidence"] = confidence.where(genuine_control, 0.0)
     out["deflection_without_control_candidate"] = (
         out.get("deflection_direction_change_veto", pd.Series(False, index=out.index)).fillna(False).astype(bool)
         & ~control_anchor

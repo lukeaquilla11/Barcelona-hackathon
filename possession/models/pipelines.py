@@ -51,6 +51,7 @@ class PipelineSpec:
     protect_dead_ball: bool = True
     protect_outside_graded: bool = True
     minimum_control_anchor_confidence: float = 0.65
+    use_genuine_control_anchor: bool = False
 
 
 def available_pipeline_specs() -> dict[str, PipelineSpec]:
@@ -141,6 +142,7 @@ def available_pipeline_specs() -> dict[str, PipelineSpec]:
             use_physics_veto=True,
             protect_dead_ball=False,
             minimum_control_anchor_confidence=0.85,
+            use_genuine_control_anchor=True,
         ),
         "strict_control_event_anchor_experiment": PipelineSpec(
             name="strict_control_event_anchor_experiment",
@@ -283,6 +285,7 @@ def apply_pipeline_spec(
         labels = apply_control_event_anchor_experiment(
             features,
             labels,
+            use_genuine_control_anchor=spec.use_genuine_control_anchor,
             minimum_control_anchor_confidence=spec.minimum_control_anchor_confidence,
         )
     if spec.name == "strict_control_event_anchor_experiment":
