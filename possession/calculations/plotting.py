@@ -485,6 +485,7 @@ def plot_evidence_window(
     *,
     team_by_slot: Mapping[int, str],
     ground_truth: pd.Series | None = None,
+    predicted_labels: pd.Series | None = None,
 ):
     """Show pitch geometry above a timeline of scenarios, anchors, and switches."""
     import matplotlib.pyplot as plt
@@ -511,17 +512,18 @@ def plot_evidence_window(
         start_frame,
         end_frame,
         ground_truth=ground_truth,
+        predicted_labels=predicted_labels,
         ax=timeline_ax,
     )
     return fig, (pitch_ax, timeline_ax)
 
 
-def _plot_ground_truth_strip(ax, frames, ground_truth: pd.Series, *, y: float = 1.64):
-    """Draw contiguous public H/A/D labels as one consistent colour strip."""
+def _plot_label_strip(ax, frames, labels: pd.Series, *, y: float, legend_prefix: str):
+    """Draw contiguous H/A/D labels as one consistent colour strip."""
     from matplotlib.patches import Rectangle
 
     frame_values = np.asarray(frames, dtype=int)
-    labels = ground_truth.reindex(frame_values).to_numpy()
+    label_values = labels.reindex(frame_values).to_numpy()
     colors = {"H": "#d62728", "A": "#1f77b4", "D": "#999999"}
     if len(frame_values) == 0:
         return
@@ -532,11 +534,11 @@ def _plot_ground_truth_strip(ax, frames, ground_truth: pd.Series, *, y: float = 
         same_run = (
             i < len(frame_values)
             and frame_values[i] == frame_values[i - 1] + 1
-            and labels[i] == labels[start]
+            and label_values[i] == label_values[start]
         )
         if same_run:
             continue
-        label = labels[start]
+        label = label_values[start]
         if label in colors:
             ax.add_patch(Rectangle(
                 (frame_values[start] - 0.5, y),
@@ -545,8 +547,8 @@ def _plot_ground_truth_strip(ax, frames, ground_truth: pd.Series, *, y: float = 
                 facecolor=colors[label],
                 edgecolor="none",
                 label=(
-                    {"H": "ground truth H / Home", "A": "ground truth A / Away",
-                     "D": "ground truth D / dead / unavailable"}[label]
+                    {"H": f"{legend_prefix} H / Home", "A": f"{legend_prefix} A / Away",
+                     "D": f"{legend_prefix} D / dead / unavailable"}[label]
                     if label not in labelled else "_nolegend_"
                 ),
                 alpha=0.95,
@@ -554,6 +556,40 @@ def _plot_ground_truth_strip(ax, frames, ground_truth: pd.Series, *, y: float = 
             ))
             labelled.add(label)
         start = i
+
+
+def _plot_ground_truth_strip(ax, frames, ground_truth: pd.Series, *, y: float = 1.64):
+    """Draw contiguous public H/A/D labels as one consistent colour strip."""
+    _plot_label_strip(ax, frames, ground_truth, y=y, legend_prefix="ground truth")
+
+
+def _plot_mismatch_windows(
+    ax,
+    frames,
+    ground_truth: pd.Series,
+    predicted_labels: pd.Series,
+    *,
+    y_min: float = -0.5,
+    y_max: float = 2.35,
+):
+    """Shade contiguous graded frames where prediction and public truth disagree."""
+    frame_values = np.asarray(frames, dtype=int)
+    gt = ground_truth.reindex(frame_values).astype("string").to_numpy()
+    pred = predicted_labels.reindex(frame_values).astype("string").to_numpy()
+    mismatch = pd.notna(gt) & pd.notna(pred) & (gt != "X") & (gt != pred)
+    if not mismatch.any():
+        return
+    starts = np.flatnonzero(mismatch & ~np.r_[False, mismatch[:-1]])
+    stops = np.flatnonzero(mismatch & ~np.r_[mismatch[1:], False])
+    for index, (start, stop) in enumerate(zip(starts, stops)):
+        ax.axvspan(
+            frame_values[start] - 0.5,
+            frame_values[stop] + 0.5,
+            color="#d62728",
+            alpha=0.10,
+            label="label disagreement window" if index == 0 else "_nolegend_",
+            zorder=0,
+        )
 
 
 def _plot_anchor_margin(ax, window: pd.DataFrame) -> None:
@@ -592,6 +628,7 @@ def plot_timeline_window(
     end_frame: int,
     *,
     ground_truth: pd.Series | None = None,
+    predicted_labels: pd.Series | None = None,
     ax=None,
 ):
     """Plot only the scenario/anchor evidence timeline for a frame window."""
@@ -608,9 +645,9 @@ def plot_timeline_window(
         frame_to_match_clock=dict(zip(window["frame"].astype(int), window["match_clock_s"].astype(float)))
         if "match_clock_s" in window else None,
     )
-    ax.set_yticks([0, 0.5, 1, 1.78])
-    ax.set_yticklabels(["Away", "Dead / unavailable", "Home", "Ground truth"])
-    ax.set_ylim(-0.5, 2.1)
+    ax.set_yticks([0, 0.5, 1, 1.78, 2.08])
+    ax.set_yticklabels(["Away", "Dead / unavailable", "Home", "Ground truth", "Prediction"])
+    ax.set_ylim(-0.5, 2.4)
     ax.grid(axis="x", alpha=0.2)
     x = window["frame"].to_numpy()
     for column, y, color, label in (
@@ -649,5 +686,9 @@ def plot_timeline_window(
             ax.text(0.99, 0.04, "ground truth unavailable for this frame range",
                     transform=ax.transAxes, ha="right", color="#a33", fontsize=8,
                     bbox={"facecolor": "white", "alpha": 0.8, "edgecolor": "#999"})
+    if predicted_labels is not None:
+        _plot_label_strip(ax, window["frame"], predicted_labels, y=1.94, legend_prefix="prediction")
+        if ground_truth is not None:
+            _plot_mismatch_windows(ax, window["frame"], ground_truth, predicted_labels)
     ax.legend(loc="upper left", bbox_to_anchor=(0, -0.28), ncol=3, fontsize=8)
     return ax.figure, ax
