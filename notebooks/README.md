@@ -35,6 +35,17 @@ model = select_model("aligned_physics_veto")
 features, labels = run_decision_pipeline(features, spec=model)
 ```
 
+To compare the independently developed `stage/hq` decoder without changing the
+shared evidence construction, select it by name:
+
+```python
+stage_hq = select_model("stage_hq_viterbi")
+features, labels = run_decision_pipeline(features, spec=stage_hq)
+```
+
+This is intentionally a decoder comparison: scenarios and anchors are still
+detected once and passed to every model.
+
 Plots are audit views over the same feature table. A visual observation is not a hand-written label.
 
 The modelling distinction is deliberate: `H`, `A`, and `D` are the hidden possession states. Scenario names such as `CONTROLLED`, `CONTESTED`, `BALL_IN_FLIGHT`, `LONG_BALL`, and `RESTART` describe observable evidence. The decoder maps those observations to confidence over the hidden states; scenarios are not extra labels.

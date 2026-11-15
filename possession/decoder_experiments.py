@@ -898,6 +898,36 @@ def scenario_confidence_scores(features: pd.DataFrame) -> pd.DataFrame:
     out["scenario_confidence"] = best
     out["scenario_margin"] = best - second
     out["scenario_state"] = np.asarray([score_columns[index].removeprefix("state_score_") for index in np.argmax(scores, axis=1)], dtype=object)
+
+    # Evidence-normalized hidden-state confidence vector.  H/A/D are the
+    # possession states; scenario scores above are observable contexts.  These
+    # values are deliberately called probabilities only within the evidence
+    # vector (they are not calibrated public-label probabilities).
+    h_raw = np.maximum(out["state_score_H_CONTROL"].to_numpy(float), h_reception)
+    a_raw = np.maximum(out["state_score_A_CONTROL"].to_numpy(float), a_reception)
+    d_raw = out["state_score_DEAD_BALL"].to_numpy(float)
+    selected_team = out.get("selected_anchor_team", out.get("anchor_team", pd.Series(None, index=out.index))).to_numpy(object)
+    selected_confidence = pd.to_numeric(
+        out.get("selected_anchor_confidence", out.get("anchor_confidence_score", pd.Series(0.0, index=out.index))),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    h_raw += np.where(selected_team == "H", 0.45 * selected_confidence, 0.0)
+    a_raw += np.where(selected_team == "A", 0.45 * selected_confidence, 0.0)
+    # Flight/contest/occlusion reduce commitment without forcing D: they are
+    # precisely the cases where the next touch is not yet resolved.
+    unresolved = np.clip(
+        np.maximum(out["state_score_CONTESTED"].to_numpy(float), out["state_score_BALL_IN_FLIGHT"].to_numpy(float)),
+        0.0, 1.0,
+    )
+    h_raw *= 1.0 - 0.30 * unresolved
+    a_raw *= 1.0 - 0.30 * unresolved
+    evidence = np.column_stack([h_raw, a_raw, d_raw]) + 1e-6
+    evidence /= evidence.sum(axis=1, keepdims=True)
+    out["state_probability_H"] = evidence[:, 0]
+    out["state_probability_A"] = evidence[:, 1]
+    out["state_probability_D"] = evidence[:, 2]
+    out["state_probability_margin"] = evidence.max(axis=1) - np.partition(evidence, -2, axis=1)[:, -2]
+    out["state_probability_state"] = np.asarray([("H", "A", "D")[index] for index in evidence.argmax(axis=1)], dtype=object)
     out.loc[~graded, "scenario_state"] = "OUTSIDE_GRADED"
     out.loc[~graded, "scenario_confidence"] = 1.0
     # The temporal decoder is appropriate only for ambiguous live-ball

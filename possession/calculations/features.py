@@ -35,7 +35,7 @@ from possession.temporal_rules import (
     add_transition_forecast_features,
     load_rules,
 )
-from possession.decoder_experiments import add_scenario_episode_features, classify_scenarios
+from possession.decoder_experiments import add_scenario_episode_features, classify_scenarios, scenario_confidence_scores
 from possession.calculations.scenario_evidence import add_scenario_evidence_features
 
 
@@ -79,7 +79,9 @@ def build_engineered_features(
     temporal = add_scenario_episode_features(temporal)
     # Keep linked player-path evidence model-agnostic.  Every decoder sees the
     # same scenario observations; it decides how strongly to use them.
-    return add_scenario_evidence_features(
+    temporal = add_scenario_evidence_features(
         temporal, slot_team_map(paths["atd_meta"]),
         radius_m=float(rules.get("pitch", {}).get("scenario_player_radius_m", 12.0)),
     )
+    # Expose the same H/A/D evidence vector to every decoder and notebook.
+    return scenario_confidence_scores(temporal)

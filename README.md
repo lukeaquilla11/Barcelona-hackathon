@@ -8,7 +8,7 @@ The pipeline is intentionally thin. Use the public façade in `possession/pipeli
 
 - `build_evidence_table()` — load the supplied data and calculate the complete frame-level feature table;
 - `detect_scenarios()` — attach scenario confidence and episode evidence;
-- `select_model()` — choose one registered model specification, including the evaluated physics-veto candidate;
+- `select_model()` — choose one registered model specification, including the evaluated physics-veto candidate and the preserved `stage_hq_viterbi` diagnostic baseline;
 - `run_decision_pipeline()` — pass the feature table and scenario evidence to that selected model function;
 - `PipelineSpec` — declare the decision policy without duplicating implementation code.
 
@@ -25,6 +25,13 @@ The pipeline keeps evidence construction separate from decision policy:
 5. **Evaluation layer** — write the selected submission and score it only when the appropriate ground truth is available.
 
 The runner is deliberately thin: it calls the reusable helpers, passes their shared evidence to one selected model policy, and returns frame-aligned labels. The notebooks are the organiser-facing explanation of the observations; helper modules contain the implementation.
+
+The `stage_hq_viterbi` option preserves the independently developed three-state
+Viterbi decoder for a like-for-like experiment. It uses the same canonical
+feature/scenario/anchor table as the other models, but retains its simpler
+nearest-player, ball-speed, visibility, player-activity, out-of-play, and weak
+Smart-Tagging evidence handling. It is a comparison baseline, not a replacement
+for the richer physics-veto policy.
 
 ## Loading the data
 

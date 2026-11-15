@@ -30,6 +30,7 @@ from possession.sequence_models import (
     RuleConstrainedViterbi,
     SelectiveRuleViterbi,
 )
+from possession.models.stage_hq_viterbi import stage_hq_labels
 
 
 @dataclass(frozen=True)
@@ -93,6 +94,14 @@ def available_pipeline_specs() -> dict[str, PipelineSpec]:
             name="bayesian_anchor_hmm_diagnostic",
             transition_rule="none",
             decoder="bayesian_hmm",
+        ),
+        "stage_hq_viterbi": PipelineSpec(
+            name="stage_hq_viterbi",
+            use_smart_set_piece=False,
+            use_dead_ball_boundary=False,
+            transition_rule="none",
+            decoder="stage_hq_viterbi",
+            protect_dead_ball=False,
         ),
         "literal_out_of_bounds_diagnostic": PipelineSpec(
             name="literal_out_of_bounds_diagnostic",
@@ -197,6 +206,8 @@ def apply_pipeline_spec(
         labels = AnchorInitializedHSMM(rules).fit(features).predict(features)
     elif spec.decoder == "bayesian_hmm":
         labels = BayesianAnchorHMM(rules).fit(features).predict(features)
+    elif spec.decoder == "stage_hq_viterbi":
+        labels = stage_hq_labels(features)
     elif spec.decoder != "none":
         raise ValueError(f"Unknown decoder: {spec.decoder}")
     # Every decoder is a consistency layer, not permission to override hard
