@@ -20,6 +20,7 @@ from possession.decoder_experiments import (
     dead_ball_boundary_evidence,
     duration_aware_scenario_decode,
     literal_out_of_bounds_dead_ball_evidence,
+    release_restart_dead_ball_on_control,
     resolve_aligned_reception_switch,
 )
 from possession.scenario_decoder import decode_scenario_labels
@@ -101,6 +102,13 @@ def available_pipeline_specs() -> dict[str, PipelineSpec]:
             use_dead_ball_boundary=False,
             transition_rule="none",
             decoder="stage_hq_viterbi",
+            protect_dead_ball=False,
+        ),
+        "evidence_bounded_deadball": PipelineSpec(
+            name="evidence_bounded_deadball",
+            use_dead_ball_boundary=True,
+            transition_rule="aligned_reception",
+            use_physics_veto=True,
             protect_dead_ball=False,
         ),
         "literal_out_of_bounds_diagnostic": PipelineSpec(
@@ -192,6 +200,12 @@ def apply_pipeline_spec(
             minimum_reception_score=0.55,
             use_physics_veto=spec.use_physics_veto,
         )
+        if spec.name == "evidence_bounded_deadball":
+            labels = release_restart_dead_ball_on_control(
+                interpolated,
+                labels,
+                minimum_anchor_confidence=0.85,
+            )
     elif spec.transition_rule not in {"none", "aligned_reception"}:
         raise ValueError(f"Unknown transition rule: {spec.transition_rule}")
     if spec.decoder == "duration_viterbi":

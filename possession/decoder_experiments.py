@@ -2096,6 +2096,70 @@ def restart_control_boundary_labels(
     return output.astype("<U1")
 
 
+def release_restart_dead_ball_on_control(
+    features: pd.DataFrame,
+    base_labels: np.ndarray,
+    *,
+    minimum_anchor_confidence: float = 0.85,
+) -> np.ndarray:
+    """Release Smart-Tag D only where post-restart control is visible.
+
+    Smart Tagging supplies the restart context. D is retained through the
+    unresolved live-ball interval. Once a selected H/A anchor with sufficient
+    confidence appears after the restart becomes live, only overlapping D
+    frames with the same visible anchor are released. This uses anchor
+    evidence, not a fixed D duration, and never invents H/A across an
+    unresolved flight or contest.
+    """
+    output = np.asarray(base_labels, dtype="<U1").copy()
+    n_frames = len(features)
+    in_play = graded_mask(n_frames)
+    context = features.get("smart_set_piece", pd.Series(False, index=features.index)).to_numpy(bool)
+    live = features.get(
+        "restart_live_boundary_anchor",
+        features.get("restart_ball_active", pd.Series(False, index=features.index)),
+    ).to_numpy(bool)
+    anchor = features.get(
+        "selected_anchor_team",
+        features.get("anchor_team", pd.Series(None, index=features.index)),
+    ).to_numpy(object)
+    confidence = pd.to_numeric(
+        features.get(
+            "selected_anchor_confidence",
+            features.get("anchor_confidence_score", pd.Series(0.0, index=features.index)),
+        ),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    reliable = np.isin(anchor, ["H", "A"]) & (confidence >= float(minimum_anchor_confidence))
+
+    start = 0
+    while start < n_frames:
+        if not context[start] or not in_play[start]:
+            start += 1
+            continue
+        end = start + 1
+        while end < n_frames and context[end] and in_play[end]:
+            end += 1
+        live_positions = np.flatnonzero(live[start:end])
+        if live_positions.size:
+            live_start = start + int(live_positions[0])
+            control_positions = np.flatnonzero(reliable[live_start:end])
+            if control_positions.size:
+                control_start = live_start + int(control_positions[0])
+                team = anchor[control_start]
+                release = (
+                    (output[control_start:end] == "D")
+                    & reliable[control_start:end]
+                    & (anchor[control_start:end] == team)
+                )
+                release_positions = np.flatnonzero(release)
+                output[control_start + release_positions] = team
+        start = end
+
+    output[~in_play] = "X"
+    return output.astype("<U1")
+
+
 def hierarchical_restart_fill_labels(
     features: pd.DataFrame,
     base_labels: np.ndarray,

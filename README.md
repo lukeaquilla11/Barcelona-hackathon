@@ -33,6 +33,10 @@ nearest-player, ball-speed, visibility, player-activity, out-of-play, and weak
 Smart-Tagging evidence handling. It is a comparison baseline, not a replacement
 for the richer physics-veto policy.
 
+`evidence_bounded_deadball` is an additional diagnostic policy: Smart Tagging
+provides restart context, while D is released only where a post-restart H/A
+control anchor is visible. It does not impose a fixed dead-ball duration.
+
 ## Loading the data
 
 ```bash
