@@ -820,6 +820,10 @@ def scenario_confidence_scores(features: pd.DataFrame) -> pd.DataFrame:
     ball_y = pd.to_numeric(out.get("ball_y", pd.Series(np.nan, index=out.index)), errors="coerce").to_numpy(float)
     out_of_bounds = np.isfinite(ball_x) & np.isfinite(ball_y) & ((ball_x < 0.0) | (ball_x > 1.0) | (ball_y < 0.0) | (ball_y > 1.0))
     dead_evidence = set_piece & ~np.isin(restart_type, ["Kick Off (Start)", "Kick Off (After Goal)"]) & (observed_slow | low_motion_missing | out_of_bounds)
+    dead_evidence |= out.get("gap_same_area_low_motion_dead_candidate", pd.Series(False, index=out.index)).to_numpy(bool)
+    dead_evidence |= out.get("gap_out_of_play_dead_candidate", pd.Series(False, index=out.index)).to_numpy(bool)
+    dead_evidence |= out.get("restart_low_motion_cluster_candidate", pd.Series(False, index=out.index)).to_numpy(bool)
+    dead_evidence |= out.get("second_half_pre_kickoff_dead_candidate", pd.Series(False, index=out.index)).to_numpy(bool)
     out["state_score_DEAD_BALL"] = np.where(dead_evidence, 1.0, 0.0)
     out["state_score_BALL_IN_FLIGHT"] = np.where(flight | (np.nan_to_num(speed, nan=0.0) >= 8.0), 1.0, 0.0)
     arrival = pd.to_numeric(out.get("arrival_time_margin_s", pd.Series(np.nan, index=out.index)), errors="coerce").to_numpy(float)
@@ -839,6 +843,10 @@ def scenario_confidence_scores(features: pd.DataFrame) -> pd.DataFrame:
     speed_drop = pd.to_numeric(out.get("ball_speed_drop_mps", pd.Series(np.nan, index=out.index)), errors="coerce").to_numpy(float)
     flight_support = np.clip((np.nan_to_num(speed, nan=0.0) - 4.0) / 8.0, 0.0, 1.0)
     flight_support = np.maximum(flight_support, flight.astype(float))
+    flight_support = np.maximum(
+        flight_support,
+        out.get("gap_pass_to_space_candidate", pd.Series(False, index=out.index)).to_numpy(bool).astype(float),
+    )
     deceleration = np.clip(np.nan_to_num(speed_drop, nan=0.0) / 4.0, 0.0, 1.0)
     receiver_close = 1.0 - clipped(distance, 0.0, 4.0)
     h_reception = (

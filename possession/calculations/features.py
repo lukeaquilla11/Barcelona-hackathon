@@ -29,6 +29,7 @@ from possession.temporal_rules import (
     apply_anchor_hierarchy,
     add_switch_confirmation_features,
     add_missing_ball_trajectory_features,
+    add_missing_ball_case_features,
     add_gap_player_path_features,
     add_pipeline_evidence_features,
     add_temporal_features,
@@ -83,5 +84,6 @@ def build_engineered_features(
         temporal, slot_team_map(paths["atd_meta"]),
         radius_m=float(rules.get("pitch", {}).get("scenario_player_radius_m", 12.0)),
     )
+    temporal = add_missing_ball_case_features(temporal, rules)
     # Expose the same H/A/D evidence vector to every decoder and notebook.
     return scenario_confidence_scores(temporal)

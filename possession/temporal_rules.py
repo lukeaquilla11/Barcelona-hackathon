@@ -474,6 +474,128 @@ def add_gap_player_path_features(
     return out
 
 
+def add_missing_ball_case_features(
+    features: pd.DataFrame,
+    rules: dict[str, Any] | None = None,
+) -> pd.DataFrame:
+    """Expose interpretable hypotheses for internal ball-coordinate gaps.
+
+    These are observation signals, not possession labels.  Each signal is
+    broadcast across the gap so a decoder can keep a time series of evidence:
+    reappearance with the same team, possible delayed switch, low-motion
+    stoppage, pass-to-space, tackle risk, and restart context.  The endpoint
+    bridge is deliberately only a proxy; it is never presented as the exact
+    hidden ball path.
+    """
+    rules = load_rules() if rules is None else rules
+    out = features.copy()
+    n_frames = len(out)
+    trajectory = rules.get("trajectory", {})
+    dead_ball = rules.get("dead_ball_evidence", {})
+    nearby_distance = float(trajectory.get("nearby_gap_displacement_m", 3.0))
+    low_median = float(dead_ball.get("low_activity_median_mps", 1.5))
+    low_p90 = float(dead_ball.get("low_activity_p90_mps", 2.0))
+
+    boolean_columns = [
+        "gap_nearby_teleport_candidate",
+        "gap_same_area_low_motion_dead_candidate",
+        "gap_same_team_reappearance_candidate",
+        "gap_opponent_reappearance_switch_candidate",
+        "gap_receiver_acceleration_candidate",
+        "gap_pass_to_space_candidate",
+        "gap_opponent_near_miss_candidate",
+        "gap_out_of_play_dead_candidate",
+        "restart_low_motion_cluster_candidate",
+        "restart_live_control_candidate",
+        "second_half_pre_kickoff_dead_candidate",
+    ]
+    for column in boolean_columns:
+        out[column] = False
+    for column in [
+        "gap_same_team_confidence",
+        "gap_switch_confidence",
+        "gap_deadball_confidence",
+        "gap_pass_to_space_confidence",
+    ]:
+        out[column] = 0.0
+
+    if n_frames == 0:
+        return out
+
+    ball_x = _numeric(out, "ball_x").to_numpy(float)
+    ball_y = _numeric(out, "ball_y").to_numpy(float)
+    missing = ~np.isfinite(ball_x) | ~np.isfinite(ball_y)
+    starts = np.flatnonzero(missing & ~np.r_[False, missing[:-1]])
+    ends = np.flatnonzero(missing & ~np.r_[missing[1:], False])
+    anchor = out.get("anchor_team", pd.Series(None, index=out.index)).to_numpy(object)
+    closest = out.get("closest_team", pd.Series(None, index=out.index)).to_numpy(object)
+    activity_median = _numeric(out, "player_activity_median_mps").to_numpy(float)
+    activity_p90 = _numeric(out, "player_activity_p90_mps").to_numpy(float)
+    restart = out.get("restart_context", pd.Series(False, index=out.index)).fillna(False).to_numpy(bool)
+    restart_type = out.get("restart_type", pd.Series(None, index=out.index)).to_numpy(object)
+    out_of_play = out.get("ball_out_of_play_anchor", pd.Series(False, index=out.index)).fillna(False).to_numpy(bool)
+    low_motion = np.nan_to_num(activity_median, nan=np.inf) <= low_median
+    low_motion &= np.nan_to_num(activity_p90, nan=np.inf) <= low_p90
+    second_half_pre_kickoff = out.get(
+        "match_clock_status", pd.Series("", index=out.index)
+    ).eq("2H pre-kickoff").to_numpy(bool)
+
+    def _team_at(index: int) -> object:
+        return anchor[index] if anchor[index] in ("H", "A") else closest[index]
+
+    for start, end in zip(starts, ends):
+        before, after = start - 1, end + 1
+        if before < 0 or after >= n_frames:
+            continue
+        row_slice = slice(start, end + 1)
+        displacement = float(out.get("ball_gap_displacement_m", pd.Series(np.nan, index=out.index)).iloc[start])
+        coherent = bool(out.get("ball_gap_trajectory_coherent", pd.Series(False, index=out.index)).iloc[start])
+        speed_change = float(out.get("ball_gap_speed_change_mps", pd.Series(np.nan, index=out.index)).iloc[start])
+        sharp_acceleration = bool(out.get("ball_gap_sharp_acceleration_risk", pd.Series(False, index=out.index)).iloc[start])
+        path_supported = bool(out.get("gap_player_path_supported", pd.Series(False, index=out.index)).iloc[start])
+        path_team = out.get("gap_player_path_team", pd.Series(None, index=out.index)).iloc[start]
+        prior_team, next_team = _team_at(before), _team_at(after)
+        same_team = path_team in ("H", "A") and path_team == next_team
+        switch = prior_team in ("H", "A") and next_team in ("H", "A") and prior_team != next_team
+        slow_gap = bool(np.all(low_motion[start : end + 1]))
+        same_area = np.isfinite(displacement) and displacement <= nearby_distance
+        out_of_play_gap = bool(out_of_play[before] or out_of_play[after])
+        restart_gap = bool(np.any(restart[start : end + 1]))
+        low_motion_restart = restart_gap and slow_gap
+        restart_live = bool(np.any(out.get("restart_live_boundary_anchor", pd.Series(False, index=out.index)).iloc[start : end + 1]))
+        receiver_acceleration = same_team and np.isfinite(speed_change) and speed_change > 0
+        pass_to_space = coherent and sharp_acceleration and not path_supported
+        opponent_near_miss = bool(out.get("gap_tackle_risk_candidate", pd.Series(False, index=out.index)).iloc[start]) and not switch
+        gap_confidence = 1.0 if same_team else (0.5 if path_supported and path_team in ("H", "A") else 0.0)
+        switch_confidence = 1.0 if switch else (0.5 if next_team in ("H", "A") and path_team == next_team else 0.0)
+        dead_confidence = float(slow_gap) * (0.65 + 0.35 * float(same_area or out_of_play_gap))
+        pass_confidence = float(coherent) * (0.65 if sharp_acceleration else 0.25) * (0.5 if path_supported else 1.0)
+
+        out.loc[row_slice, "gap_nearby_teleport_candidate"] = bool(coherent and same_area and not sharp_acceleration)
+        out.loc[row_slice, "gap_same_area_low_motion_dead_candidate"] = bool(same_area and slow_gap)
+        out.loc[row_slice, "gap_same_team_reappearance_candidate"] = same_team
+        out.loc[row_slice, "gap_opponent_reappearance_switch_candidate"] = switch
+        out.loc[row_slice, "gap_receiver_acceleration_candidate"] = receiver_acceleration
+        out.loc[row_slice, "gap_pass_to_space_candidate"] = pass_to_space
+        out.loc[row_slice, "gap_opponent_near_miss_candidate"] = opponent_near_miss
+        out.loc[row_slice, "gap_out_of_play_dead_candidate"] = out_of_play_gap
+        out.loc[row_slice, "restart_low_motion_cluster_candidate"] = low_motion_restart
+        out.loc[row_slice, "restart_live_control_candidate"] = restart_live
+        out.loc[row_slice, "second_half_pre_kickoff_dead_candidate"] = bool(np.any(second_half_pre_kickoff[start : end + 1]))
+        out.loc[row_slice, "gap_same_team_confidence"] = gap_confidence
+        out.loc[row_slice, "gap_switch_confidence"] = switch_confidence
+        out.loc[row_slice, "gap_deadball_confidence"] = dead_confidence
+        out.loc[row_slice, "gap_pass_to_space_confidence"] = pass_confidence
+
+    # Set-piece semantics also matter when the ball is visible: a ball appearing
+    # does not end a restart context while the restart group remains settled.
+    restart_text = pd.Series(restart_type, index=out.index).fillna("").astype(str)
+    out["goal_reset_restart_context"] = restart & restart_text.str.contains("After Goal|Goal", case=False, regex=True)
+    out["restart_ball_appears_while_clustered"] = restart & (~missing) & low_motion
+    out["restart_ball_appears_while_clustered"] &= ~out["restart_live_control_candidate"].to_numpy(bool)
+    return out
+
+
 def add_reachability_features(
     features: pd.DataFrame,
     team_by_slot: dict[int, str],

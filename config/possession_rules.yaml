@@ -66,6 +66,7 @@ trajectory:
   same_player_speed_match_max_mps: 3.0
   sharp_gap_speed_change_mps: 8.0
   tackle_opponent_distance_m: 2.5
+  nearby_gap_displacement_m: 3.0
 
 restart:
   active_ball_speed_mps: 1.0
