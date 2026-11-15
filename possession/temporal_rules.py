@@ -697,6 +697,50 @@ def add_foul_stoppage_evidence(
     return out
 
 
+def add_kick_departure_features(
+    features: pd.DataFrame,
+    rules: dict[str, Any] | None = None,
+    *,
+    maximum_kicker_distance_m: float = 2.5,
+) -> pd.DataFrame:
+    """Identify a likely kick departure and its pre-kick team.
+
+    A candidate requires a nearby H/A player on the frame immediately before
+    a sharp positive ball-acceleration impulse.  The player's team is exposed
+    as departure evidence; this does not by itself assign possession because a
+    kick can be a restart, clearance, pass, or deflection.
+    """
+    rules = load_rules() if rules is None else rules
+    out = features.copy()
+    speed = _numeric(out, "ball_speed_derived_mps")
+    acceleration = _numeric(out, "ball_acceleration_mps2")
+    closest = out.get("closest_team", pd.Series(None, index=out.index, dtype=object)).fillna("").astype(str)
+    distance = _numeric(out, "closest_distance_m")
+    missing = _numeric(out, "ball_x").isna() | _numeric(out, "ball_y").isna()
+    minimum_acceleration = float(_value(rules, "bridging", "long_ball_acceleration_mps2"))
+    pre_team = closest.shift(1)
+    pre_distance = distance.shift(1)
+    pre_speed = speed.shift(1)
+    candidate = (
+        acceleration.ge(minimum_acceleration)
+        & pre_team.isin(["H", "A"])
+        & pre_distance.le(maximum_kicker_distance_m)
+        & pre_speed.fillna(0.0).le(4.0)
+        & ~missing
+    )
+    confidence = (
+        0.45 * acceleration.sub(minimum_acceleration).clip(lower=0.0).div(max(minimum_acceleration, 1.0)).clip(upper=1.0)
+        + 0.35 * (1.0 - pre_distance.div(max(maximum_kicker_distance_m, 0.1)).clip(upper=1.0)).fillna(0.0)
+        + 0.20 * (1.0 - pre_speed.div(4.0).clip(upper=1.0)).fillna(0.0)
+    ).clip(0.0, 1.0).where(candidate, 0.0)
+    out["kick_departure_candidate"] = candidate
+    out["kick_departure_team"] = pre_team.where(candidate, None)
+    out["kick_departure_kicker_distance_m"] = pre_distance.where(candidate)
+    out["kick_departure_acceleration_mps2"] = acceleration.where(candidate)
+    out["kick_departure_confidence"] = confidence
+    return out
+
+
 def add_reachability_features(
     features: pd.DataFrame,
     team_by_slot: dict[int, str],

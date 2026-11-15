@@ -21,6 +21,7 @@ from possession.temporal_rules import (
     add_boundary_anchor_features,
     add_first_time_pass_features,
     add_foul_stoppage_evidence,
+    add_kick_departure_features,
     add_reachability_features,
     add_reception_episode_features,
     add_reception_geometry_features,
@@ -59,6 +60,7 @@ def build_engineered_features(
     features = add_match_time_columns(features, game=model.game)
     paths = asset_paths()
     temporal = add_temporal_features(features, rules)
+    temporal = add_kick_departure_features(temporal, rules)
     temporal = add_reachability_features(temporal, slot_team_map(paths["atd_meta"]), rules)
     temporal = add_missing_ball_trajectory_features(temporal, rules)
     temporal = add_gap_player_path_features(temporal, slot_team_map(paths["atd_meta"]), rules)
