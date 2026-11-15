@@ -542,6 +542,7 @@ def plot_evidence_window(
         missing = window["ball_x"].isna() | window["ball_y"].isna()
         for row in window.loc[missing].itertuples():
             timeline_ax.axvline(row.frame, color="#d95f02", alpha=0.08, linewidth=2)
+    _plot_anchor_margin(timeline_ax, window)
     if ground_truth is not None:
         _plot_ground_truth_strip(timeline_ax, window["frame"], ground_truth, y=1.64)
     timeline_ax.legend(loc="upper left", bbox_to_anchor=(0, -0.22), ncol=3, fontsize=8)
@@ -586,6 +587,36 @@ def _plot_ground_truth_strip(ax, frames, ground_truth: pd.Series, *, y: float = 
             ))
             labelled.add(label)
         start = i
+
+
+def _plot_anchor_margin(ax, window: pd.DataFrame) -> None:
+    """Overlay the continuous nearest-team distance difference.
+
+    ``team_distance_margin_m`` is ``nearest_a_distance_m -
+    nearest_h_distance_m``: positive values mean Home is closer to the ball,
+    negative values mean Away is closer. The categorical dots remain useful
+    for frame-level observations; this trace shows the shape and strength of
+    the competition between the two teams.
+    """
+    if "team_distance_margin_m" not in window:
+        return
+    margin = pd.to_numeric(window["team_distance_margin_m"], errors="coerce")
+    if not margin.notna().any():
+        return
+    margin_ax = ax.twinx()
+    x = window["frame"].to_numpy()
+    values = margin.to_numpy(float)
+    margin_ax.plot(x, values, color="#6a3d9a", linewidth=1.4, alpha=0.82, label="distance margin (A − H)")
+    margin_ax.axhline(0.0, color="#6a3d9a", linewidth=0.8, linestyle="--", alpha=0.45)
+    margin_ax.fill_between(x, 0.0, values, where=np.nan_to_num(values, nan=0.0) >= 0.0,
+                           color="#d62728", alpha=0.07, interpolate=True)
+    margin_ax.fill_between(x, 0.0, values, where=np.nan_to_num(values, nan=0.0) < 0.0,
+                           color="#1f77b4", alpha=0.07, interpolate=True)
+    margin_ax.set_ylabel("distance margin (m)\npositive = Home closer", color="#6a3d9a", fontsize=8)
+    margin_ax.tick_params(axis="y", labelcolor="#6a3d9a", labelsize=8)
+    margin_ax.grid(False)
+    margin_ax.set_zorder(ax.get_zorder() + 1)
+    margin_ax.patch.set_visible(False)
 
 
 def plot_timeline_window(
@@ -643,6 +674,7 @@ def plot_timeline_window(
         missing = window["ball_x"].isna() | window["ball_y"].isna()
         for row in window.loc[missing].itertuples():
             ax.axvline(row.frame, color="#d95f02", alpha=0.08, linewidth=2)
+    _plot_anchor_margin(ax, window)
     if ground_truth is not None:
         gt = ground_truth.reindex(window["frame"]).to_numpy()
         _plot_ground_truth_strip(ax, window["frame"], ground_truth, y=1.64)
