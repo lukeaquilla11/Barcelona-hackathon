@@ -205,6 +205,7 @@ def apply_pipeline_spec(
                 interpolated,
                 labels,
                 minimum_anchor_confidence=0.85,
+                require_goal_kick_release=True,
             )
     elif spec.transition_rule not in {"none", "aligned_reception"}:
         raise ValueError(f"Unknown transition rule: {spec.transition_rule}")
@@ -227,6 +228,18 @@ def apply_pipeline_spec(
     # Every decoder is a consistency layer, not permission to override hard
     # evidence. Restore the same protections after the decoder has run.
     graded = graded_mask(len(features))
+    if spec.name == "evidence_bounded_deadball":
+        # A confirmed literal out-of-pitch run is D regardless of what the
+        # nearest-player or decoder layers inferred. The diagnostic helper
+        # requires the configured minimum run, protecting against one-frame
+        # coordinate spikes.
+        evidence = rules["dead_ball_evidence"]
+        labels = literal_out_of_bounds_dead_ball_evidence(
+            features,
+            labels,
+            minimum_run_frames=int(evidence["minimum_out_of_bounds_run_frames"]),
+            boundary_tolerance=float(evidence["out_of_bounds_boundary_tolerance"]),
+        )
     if spec.protect_dead_ball and "smart_set_piece" in features:
         set_piece = features["smart_set_piece"].fillna(False).to_numpy(bool)
         labels[graded & set_piece] = "D"

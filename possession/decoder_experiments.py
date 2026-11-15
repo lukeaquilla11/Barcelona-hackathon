@@ -2116,6 +2116,7 @@ def release_restart_dead_ball_on_control(
     base_labels: np.ndarray,
     *,
     minimum_anchor_confidence: float = 0.85,
+    require_goal_kick_release: bool = False,
 ) -> np.ndarray:
     """Release Smart-Tag D only where post-restart control is visible.
 
@@ -2146,6 +2147,22 @@ def release_restart_dead_ball_on_control(
         errors="coerce",
     ).fillna(0.0).to_numpy(float)
     reliable = np.isin(anchor, ["H", "A"]) & (confidence >= float(minimum_anchor_confidence))
+    restart_type = features.get("restart_type", pd.Series("", index=features.index)).fillna("").astype(str).to_numpy()
+    departure = features.get(
+        "kick_departure_candidate", pd.Series(False, index=features.index)
+    ).fillna(False).to_numpy(bool).copy()
+    departure |= features.get(
+        "goal_kick_release_candidate", pd.Series(False, index=features.index)
+    ).fillna(False).to_numpy(bool)
+    speed = pd.to_numeric(
+        features.get("ball_speed_derived_mps", pd.Series(np.nan, index=features.index)),
+        errors="coerce",
+    ).to_numpy(float)
+    distance = pd.to_numeric(
+        features.get("ball_distance_travelled_recent_m", pd.Series(np.nan, index=features.index)),
+        errors="coerce",
+    ).to_numpy(float)
+    departure |= np.isfinite(speed) & (speed >= 1.0) & np.isfinite(distance) & (distance >= 0.5)
 
     start = 0
     while start < n_frames:
@@ -2155,6 +2172,14 @@ def release_restart_dead_ball_on_control(
         end = start + 1
         while end < n_frames and context[end] and in_play[end]:
             end += 1
+        if require_goal_kick_release and np.any(restart_type[start:end] == "Goal Kick"):
+            release_candidates = np.flatnonzero(
+                departure[start:end] & (restart_type[start:end] == "Goal Kick")
+            )
+            if release_candidates.size:
+                output[start : start + int(release_candidates[0])] = "D"
+            else:
+                output[start:end] = "D"
         live_positions = np.flatnonzero(live[start:end])
         if live_positions.size:
             live_start = start + int(live_positions[0])

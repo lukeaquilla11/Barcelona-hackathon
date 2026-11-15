@@ -741,6 +741,97 @@ def add_kick_departure_features(
     return out
 
 
+def add_goal_kick_features(
+    features: pd.DataFrame,
+    team_by_slot: Mapping[int, str],
+    *,
+    goal_area_depth_m: float = 5.5,
+    goal_area_width_m: float = 18.32,
+    boundary_tolerance_m: float = 1.0,
+) -> pd.DataFrame:
+    """Expose goal-kick settling evidence without assigning possession.
+
+    Coordinates in ``features`` are normalized ATD coordinates. A goal-kick
+    candidate is stronger when the tagged defending penalty area is clear of
+    visible opponents and player activity is low. Missing player tracks remain
+    unknown rather than being treated as evidence that the area is clear.
+    """
+    out = features.copy()
+    n = len(out)
+    ball_x = _numeric(out, "ball_x")
+    ball_y = _numeric(out, "ball_y")
+    restart_type = out.get("restart_type", pd.Series(None, index=out.index)).fillna("").astype(str)
+    goal_kick = restart_type.eq("Goal Kick")
+    x_left = goal_area_depth_m / 105.3
+    x_right = 1.0 - x_left
+    y_low = (68.0 - goal_area_width_m) / 2.0 / 68.0
+    y_high = 1.0 - y_low
+    tol_x = boundary_tolerance_m / 105.3
+    tol_y = boundary_tolerance_m / 68.0
+    left_goal = ball_x.le(x_left + tol_x)
+    right_goal = ball_x.ge(x_right - tol_x)
+    box_x = (left_goal & ball_x.ge(-tol_x) & ball_x.le(x_left + tol_x)) | (
+        right_goal & ball_x.ge(x_right - tol_x) & ball_x.le(1.0 + tol_x)
+    )
+    box_y = ball_y.ge(y_low - tol_y) & ball_y.le(y_high + tol_y)
+    inside = box_x & box_y
+
+    inside_count = np.zeros(n, dtype=float)
+    visible_count = np.zeros(n, dtype=float)
+    for slot, team in team_by_slot.items():
+        if team not in {"H", "A"}:
+            continue
+        # The tagged goal-kick team is the defending side; all other players
+        # are treated as opponents for this geometric check.
+        x = _numeric(out, f"{slot}_x")
+        y = _numeric(out, f"{slot}_y")
+        visible = x.notna() & y.notna()
+        in_box = visible & inside & x.between(-tol_x, 1.0 + tol_x) & y.between(-tol_y, 1.0 + tol_y)
+        # Count both sides first; the defending side is removed below using
+        # the slot/team map and restart team hint.
+        out[f"_goal_kick_slot_{slot}_visible"] = visible
+        out[f"_goal_kick_slot_{slot}_inside"] = in_box
+
+    restart_team = out.get("restart_team_hint", pd.Series(None, index=out.index)).fillna("").astype(str)
+    for index in range(n):
+        if not goal_kick.iloc[index] or restart_team.iloc[index] not in {"H", "A"}:
+            continue
+        opponent = "A" if restart_team.iloc[index] == "H" else "H"
+        for slot, team in team_by_slot.items():
+            if team != opponent:
+                continue
+            visible = bool(out.at[out.index[index], f"_goal_kick_slot_{slot}_visible"])
+            if visible:
+                visible_count[index] += 1
+                if bool(out.at[out.index[index], f"_goal_kick_slot_{slot}_inside"]):
+                    inside_count[index] += 1
+
+    activity = _numeric(out, "player_activity_median_mps")
+    p90 = _numeric(out, "player_activity_p90_mps")
+    speed = _numeric(out, "ball_speed_derived_mps")
+    acceleration = _numeric(out, "ball_acceleration_mps2")
+    in_goal_area = goal_kick & box_x & box_y
+    out_of_play = out.get("ball_out_of_play_anchor", pd.Series(False, index=out.index)).fillna(False)
+    recent_out_of_play = out_of_play.shift(1, fill_value=False).rolling(75, min_periods=1).max().astype(bool)
+    stationary_before = speed.shift(1).le(0.5).fillna(False)
+    release_acceleration = acceleration.ge(5.0) & speed.ge(1.0)
+    recent_goal_area_setup = in_goal_area.rolling(15, min_periods=1).max().astype(bool)
+    recent_stationary_setup = stationary_before.rolling(15, min_periods=1).max().astype(bool)
+    low_motion = activity.le(1.5) & p90.le(2.0)
+    out["goal_kick_opponent_inside_box_count"] = inside_count
+    out["goal_kick_opponent_visible_count"] = visible_count
+    out["goal_kick_opponents_clear"] = goal_kick & (inside_count == 0) & (visible_count >= 5)
+    out["goal_kick_settled_candidate"] = goal_kick & out["goal_kick_opponents_clear"] & low_motion & speed.le(1.0).fillna(True)
+    out["goal_kick_ball_in_goal_area"] = in_goal_area
+    out["goal_kick_after_out_of_play"] = goal_kick & recent_out_of_play
+    out["goal_kick_stationary_before_release"] = goal_kick & stationary_before
+    out["goal_kick_release_candidate"] = (
+        goal_kick & recent_goal_area_setup & recent_stationary_setup & release_acceleration
+    )
+    drop_columns = [column for column in out.columns if column.startswith("_goal_kick_slot_")]
+    return out.drop(columns=drop_columns)
+
+
 def add_reachability_features(
     features: pd.DataFrame,
     team_by_slot: dict[int, str],
