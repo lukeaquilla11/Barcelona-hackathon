@@ -14,6 +14,7 @@ Read the notebooks in this order:
 9. [08_run_pipeline.ipynb](./08_run_pipeline.ipynb) — organiser-facing execution of the best visible-ball candidate and public evaluation.
 10. [09_experimental_results.ipynb](./09_experimental_results.ipynb) — comparison of models, scenarios and rejected experiments.
 11. [10_first_half_results.ipynb](./10_first_half_results.ipynb) — noisy hand-labelled first-half diagnostic and interval error audit.
+12. [11_probability_transition_model.ipynb](./11_probability_transition_model.ipynb) — normalized observation evidence, explicit no-switch/contested transition hypotheses, interval resolution, and optional Viterbi/HSMM roles.
 
 The previous registry-based runner is preserved as
 [08_run_pipeline_legacy.ipynb](./08_run_pipeline_legacy.ipynb). The current 08 notebook calls
@@ -23,6 +24,11 @@ model.
 
 Core conclusion: the observations are useful; mapping them to confidence and
 H/A/D labels is the bottleneck. No fixed D hold duration is used.
+
+The probability notebook is deliberately diagnostic: its softmax vectors are
+normalized rule evidence, not calibrated probabilities. Calibration requires a
+separate reviewed-label experiment and must not be confused with the anchor
+or transition resolver.
 
 ## Appendix
 
