@@ -18,6 +18,7 @@ from possession_lab.decoder_experiments import (
     scenario_confidence_scores,
     add_observation_probability_features,
     add_haiqal_transition_evidence,
+    add_transition_channel_profile,
     add_transition_hypothesis_features,
     bootstrap_transition_stability,
     transition_channel_stability,
@@ -439,6 +440,33 @@ def main() -> None:
     )
     model.write_submission(haiqal_no_switch_output, haiqal_no_switch_labels)
     print(haiqal_no_switch_output)
+
+    # Channel-composition experiment: use George upstream and Haiqal only as
+    # bounded observations, then rebuild the H/A/NO_SWITCH/CONTESTED interval
+    # hypotheses from an explicit evidence vector.  These are predeclared
+    # sensitivity profiles, not weights fitted to the public labels.  Keeping
+    # them as separate submissions lets 09 rank them without silently changing
+    # the promoted model.
+    for channel_profile in ("anchor_dominant", "balanced", "independent_support"):
+        profile_temporal = add_transition_channel_profile(
+            haiqal_temporal,
+            profile=channel_profile,
+        )
+        profile_temporal = add_transition_hypothesis_features(profile_temporal)
+        profile_labels = retain_no_switch_intervals(
+            profile_temporal,
+            visible_settle_labels,
+            minimum_no_switch_probability=0.65,
+            minimum_interval_support=0.60,
+            maximum_interval_frames=300,
+            minimum_prior_team_run_frames=1,
+        )
+        profile_output = (
+            ROOT / "evaluation" / "results"
+            / f"diagnostic_channel_profile_{channel_profile}.csv"
+        )
+        model.write_submission(profile_output, profile_labels)
+        print(profile_output)
 
     # Shared restart-phase constraint: the restart detector contributes phase
     # and switch permission to the interval resolver instead of writing a

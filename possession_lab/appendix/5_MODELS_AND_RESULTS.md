@@ -157,6 +157,13 @@ The notebook can call the same function with `"protected_aligned_reception"`, `"
 
 EM/Baum–Welch or Bayesian parameter fitting would require reliable labels, defensible priors, or a separate labelled corpus. They remain future research rather than hidden tuning against the public score.
 
+Kinson's latest branch update adds a gradient-boosted supervised frame model, a supervised-to-
+evidence adapter, and a cross-match parameter sweep for Haiqal's rule model. These are useful
+candidate experiments, but they are a different layer from the current label-free resolver: they
+need external labelled matches and their Viterbi decoder uses fitted parameters. They are therefore
+kept opt-in and separately ranked only after held-out validation; their outputs are not silently
+inserted as anchors or transition truth in the organiser-facing pipeline.
+
 ## Current measured reference
 
 The latest verified no-switch interval candidate reports Macro-F1 `0.8917`, mean Spell-F1 `0.6207`, and transition F1@25 `0.4571` on the available public sanity evaluation. The earlier aligned reception reference reports Macro-F1 `0.7736` and mean Spell-F1 `0.5677`. The notebook displays the current scoreboard after running, so result tables are not maintained manually here.
@@ -191,6 +198,31 @@ weighted transition evidence.
 Reproduce it with `run_george_ballfill_experiment.py --compare-baseline`, or pass
 `--george-ballfill` to the canonical full runner. The feature audit is kept separate from the
 label score so an upstream signal improvement cannot be mistaken for a ground-truth gain.
+
+### Explicit transition-channel composition (tested, not promoted)
+
+The next structural experiment made the transition equation explicit instead of adding another
+scenario label. `add_transition_channel_profile` combines five observation families:
+
+```text
+anchor agreement
+  + ball motion/contact
+  + player arrival/reception geometry
+  + restart/continuity context
+  + bounded Haiqal closeness support
+  -> H/A transition support
+```
+
+It also keeps `NO_SWITCH` and `CONTESTED` as competing interval hypotheses. Three predeclared
+profiles were run: anchor-dominant, balanced, and independent-support. None uses the public labels
+to fit weights, and none imports George's or Haiqal's final labels. All three produced exactly the
+current best labels, including zero changes on public scored frames, and tied at Macro-F1 `0.8917`,
+Spell-F1 `0.6207`, and Transition F1@25 `0.4571`. The result is a useful invariance check, not a
+claimed improvement: the current resolver's anchor/reception protections absorb these bounded
+reweightings on this clip. The channel-stability audit indicates that ball-motion/contact and
+player-arrival evidence are more influential than Haiqal or restart context, so future work should
+improve those observations or validate them on the private full match rather than tune these
+weights against the five-minute public slice.
 
 ### Strict same-team trajectory bridge (tested, not active)
 

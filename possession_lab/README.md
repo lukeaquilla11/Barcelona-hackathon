@@ -39,6 +39,7 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
 - [calibration.py](./calibration.py) — opt-in MLE temperature scaling and Dirichlet transition-prior experiments;
 - [run_calibration_experiment.py](./run_calibration_experiment.py) — disjoint public-slice calibration/holdout diagnostics;
 - [sequence_models.py](./sequence_models.py) — anchor-initialized HMM/HSMM, Haiqal-style Bayesian-anchor HMM, and constrained sequence decoders;
+- optional `supervised_training/`, `supervised_bridge.py`, and `fit_haiqal_params.py` from Kinson's latest branch commit — kept as a separately validated supervised/calibration experiment because they require external labelled matches and are not safe to merge into the label-free public-slice resolver;
 - [haiqal_baseline.py](./haiqal_baseline.py) — isolated raw distance/speed/dead-ball baseline adapted from `origin/haiqal`; it does not replace our scenario or anchor decisions;
 - `diagnostic_haiqal_visible_ball_no_switch_interval` — evidence-only integration of Haiqal's closeness observation into the best visible-ball + NO_SWITCH resolver. It is retained as a reproducible ablation, not promoted: it currently produces exactly the same labels and public metrics as the best model.
 - [pipeline.py](./pipeline.py) — stable orchestration wrappers for loading data, building observations, adding scenario/probability/transition evidence, adding Haiqal observations, and running a registered model;
@@ -53,6 +54,12 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
 - [run_interpolated_flight_experiment.py](./run_interpolated_flight_experiment.py) — the canonical
   full runner; pass `--george-ballfill /path/to/BAR-ATH_ball.csv` to place George observations at
   the start of the same feature/scenario/anchor/transition pipeline;
+- `diagnostic_channel_profile_anchor_dominant`, `diagnostic_channel_profile_balanced`, and
+  `diagnostic_channel_profile_independent_support` — predeclared transition-channel ablations.
+  They combine anchor agreement, ball motion/contact, player arrival, restart continuity, and
+  bounded Haiqal support without importing either collaborator's labels. On the public slice all
+  three are exact label no-ops relative to the current best; they remain useful as full-match
+  audit outputs rather than promoted score improvements;
 - [../config/possession_rules.yaml](../config/possession_rules.yaml) — configuration-backed thresholds and windows.
 
 The root modules remain as compatibility implementations for existing scripts.

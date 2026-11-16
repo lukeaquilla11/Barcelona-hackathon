@@ -1608,6 +1608,131 @@ def add_haiqal_transition_evidence(
     return out
 
 
+def add_transition_channel_profile(
+    features: pd.DataFrame,
+    *,
+    profile: str = "balanced",
+) -> pd.DataFrame:
+    """Compose independent transition channels without importing labels.
+
+    The current trust score is intentionally broad because it must remain the
+    production-compatible baseline.  This experiment makes the proposed
+    decomposition explicit: anchor agreement, ball motion/contact, player
+    arrival, restart/no-switch context, and bounded Haiqal support.  A profile
+    replaces the ownership part of the trust vector with a weighted channel
+    composition; it never writes H/A/D/X labels and never reads ground truth.
+
+    ``balanced`` is a predeclared, interpretable profile rather than a fit to
+    the public slice.  The other profiles are sensitivity checks showing how
+    much the result depends on anchor dominance or on requiring independent
+    motion/arrival support.  The interval resolver remains responsible for
+    deciding whether the proposed ownership is accepted.
+    """
+    out = features.copy()
+
+    def numeric(name: str, default: float = 0.0) -> np.ndarray:
+        return pd.to_numeric(
+            out.get(name, pd.Series(default, index=out.index)), errors="coerce"
+        ).fillna(default).to_numpy(float)
+
+    def boolean(name: str) -> np.ndarray:
+        return out.get(name, pd.Series(False, index=out.index)).fillna(False).to_numpy(bool)
+
+    before = out.get(
+        "transition_before_anchor_team",
+        pd.Series(None, index=out.index, dtype=object),
+    ).to_numpy(object)
+    after = out.get(
+        "transition_after_anchor_team",
+        pd.Series(None, index=out.index, dtype=object),
+    ).to_numpy(object)
+    anchor_h = ((before == "A") & (after == "H")).astype(float)
+    anchor_a = ((before == "H") & (after == "A")).astype(float)
+
+    contact = np.maximum(
+        np.clip(numeric("reception_ball_deceleration_mps") / 4.0, 0.0, 1.0),
+        np.clip(numeric("ball_direction_change_rad") / 1.2, 0.0, 1.0),
+    )
+    flight = boolean("recent_flight_evidence") | (numeric("ball_speed_evidence_mps") >= 8.0)
+    motion = np.clip(0.60 * contact + 0.40 * flight.astype(float), 0.0, 1.0)
+    candidate = out.get(
+        "transition_candidate_team",
+        out.get("reception_control_team_geometry", pd.Series(None, index=out.index)),
+    ).to_numpy(object)
+    motion_h = motion * (candidate == "H")
+    motion_a = motion * (candidate == "A")
+
+    nearest_h = np.clip(1.0 - np.nan_to_num(numeric("nearest_h_distance_m", np.nan), nan=8.0) / 4.0, 0.0, 1.0)
+    nearest_a = np.clip(1.0 - np.nan_to_num(numeric("nearest_a_distance_m", np.nan), nan=8.0) / 4.0, 0.0, 1.0)
+    approach_h = np.clip(numeric("nearest_h_closing_rate_mps") / 3.0, 0.0, 1.0)
+    approach_a = np.clip(numeric("nearest_a_closing_rate_mps") / 3.0, 0.0, 1.0)
+    arrival_margin = numeric("arrival_time_margin_s", np.nan)
+    arrival_h = np.clip(np.nan_to_num(-arrival_margin, nan=0.0) / 2.0, 0.0, 1.0)
+    arrival_a = np.clip(np.nan_to_num(arrival_margin, nan=0.0) / 2.0, 0.0, 1.0)
+    reception_h = np.clip(numeric("reception_score_H"), 0.0, 1.0)
+    reception_a = np.clip(numeric("reception_score_A"), 0.0, 1.0)
+    arrival_h = np.clip(0.50 * reception_h + 0.25 * nearest_h + 0.15 * approach_h + 0.10 * arrival_h, 0.0, 1.0)
+    arrival_a = np.clip(0.50 * reception_a + 0.25 * nearest_a + 0.15 * approach_a + 0.10 * arrival_a, 0.0, 1.0)
+
+    closeness = np.clip(numeric("haiqal_closeness_score") / 3.0, -1.0, 1.0)
+    haiqal_h = np.maximum(closeness, 0.0)
+    haiqal_a = np.maximum(-closeness, 0.0)
+
+    no_switch = np.maximum(
+        numeric("transition_no_switch_cause_support"),
+        np.maximum(numeric("missing_ball_cause_flight_score"), numeric("missing_ball_cause_control_score")),
+    )
+    restart = boolean("smart_set_piece") | boolean("restart_ball_active") | boolean("restart_live_boundary_anchor")
+    no_switch = np.clip(np.maximum(no_switch, 0.80 * restart.astype(float)), 0.0, 1.0)
+    contested = np.maximum(
+        numeric("contest_score"),
+        np.maximum(numeric("missing_ball_cause_deflection_score"), numeric("missing_ball_cause_crowd_score")),
+    )
+
+    profiles: dict[str, dict[str, float]] = {
+        "anchor_dominant": {"anchor": 0.45, "motion": 0.20, "arrival": 0.30, "haiqal": 0.05},
+        "balanced": {"anchor": 0.35, "motion": 0.25, "arrival": 0.35, "haiqal": 0.05},
+        "independent_support": {"anchor": 0.30, "motion": 0.30, "arrival": 0.35, "haiqal": 0.05},
+    }
+    if profile not in profiles:
+        raise ValueError(f"unknown transition channel profile: {profile}")
+    weights = profiles[profile]
+    support_h = (
+        weights["anchor"] * anchor_h
+        + weights["motion"] * motion_h
+        + weights["arrival"] * arrival_h
+        + weights["haiqal"] * haiqal_h
+    )
+    support_a = (
+        weights["anchor"] * anchor_a
+        + weights["motion"] * motion_a
+        + weights["arrival"] * arrival_a
+        + weights["haiqal"] * haiqal_a
+    )
+
+    out["transition_channel_anchor_H"] = anchor_h
+    out["transition_channel_anchor_A"] = anchor_a
+    out["transition_channel_motion_H"] = motion_h
+    out["transition_channel_motion_A"] = motion_a
+    out["transition_channel_arrival_H"] = arrival_h
+    out["transition_channel_arrival_A"] = arrival_a
+    out["transition_channel_haiqal_H"] = haiqal_h
+    out["transition_channel_haiqal_A"] = haiqal_a
+    out["transition_channel_restart_no_switch"] = restart.astype(float)
+    out["transition_channel_no_switch_support"] = no_switch
+    out["transition_channel_contested_support"] = np.clip(contested, 0.0, 1.0)
+    out["transition_channel_support_H"] = np.clip(support_h, 0.0, 1.0)
+    out["transition_channel_support_A"] = np.clip(support_a, 0.0, 1.0)
+    out["transition_channel_profile"] = profile
+    out["transition_channel_weight_anchor"] = weights["anchor"]
+    out["transition_channel_weight_motion"] = weights["motion"]
+    out["transition_channel_weight_arrival"] = weights["arrival"]
+    out["transition_channel_weight_haiqal"] = weights["haiqal"]
+    out["transition_trust_H"] = np.clip(support_h, 0.0, 1.0)
+    out["transition_trust_A"] = np.clip(support_a, 0.0, 1.0)
+    return out
+
+
 def add_transition_hypothesis_features(
     features: pd.DataFrame,
     *,
@@ -1679,6 +1804,22 @@ def add_transition_hypothesis_features(
     contested_cause_support = np.maximum(cause_deflection, 0.85 * cause_crowd)
     dead_cause_support = cause_dead
     uncertainty_cause_support = np.maximum(cause_visibility, cause_crowd)
+    # A channel-profile experiment may provide a conservative restart/
+    # continuity support term.  It is allowed to strengthen NO_SWITCH, but it
+    # cannot manufacture H/A ownership or bypass the resolver's anchor and
+    # reception protections.
+    profile_no_switch = np.clip(
+        np.nan_to_num(numeric("transition_channel_no_switch_support", 0.0), nan=0.0),
+        0.0,
+        1.0,
+    )
+    no_switch_cause_support = np.maximum(no_switch_cause_support, profile_no_switch)
+    profile_contested = np.clip(
+        np.nan_to_num(numeric("transition_channel_contested_support", 0.0), nan=0.0),
+        0.0,
+        1.0,
+    )
+    contested_cause_support = np.maximum(contested_cause_support, profile_contested)
     opposite_anchor_pair = boolean("transition_opposite_anchor_pair")
     kalman_available = boolean("ball_kalman_path_available")
     kalman_reliable = boolean("ball_kalman_reliable")

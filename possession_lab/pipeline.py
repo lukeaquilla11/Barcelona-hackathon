@@ -23,6 +23,8 @@ from possession_lab.calculations.features import build_engineered_features
 from possession_lab.decoder_experiments import (
     add_observation_probability_features,
     add_scenario_episode_features,
+    add_transition_channel_profile,
+    add_transition_hypothesis_features,
     build_transition_hypothesis_ledger,
     scenario_confidence_scores,
 )
@@ -92,6 +94,22 @@ def build_transition_evidence(observations: pd.DataFrame) -> pd.DataFrame:
     return build_transition_hypothesis_ledger(build_probability_evidence(observations))
 
 
+def build_transition_channel_evidence(
+    observations: pd.DataFrame,
+    *,
+    profile: str = "balanced",
+) -> pd.DataFrame:
+    """Build explicit channel-weighted transition hypotheses.
+
+    This is an experiment boundary: it composes anchor, ball-motion,
+    player-arrival, restart-continuity, and bounded Haiqal observations, then
+    rebuilds the interval hypotheses. It never produces final labels or reads
+    ground truth; a resolver remains the next stage.
+    """
+    profiled = add_transition_channel_profile(observations, profile=profile)
+    return add_transition_hypothesis_features(profiled)
+
+
 def add_haiqal_observations(
     observations: pd.DataFrame,
     *,
@@ -129,6 +147,7 @@ __all__ = [
     "add_haiqal_observations",
     "build_observations",
     "build_probability_evidence",
+    "build_transition_channel_evidence",
     "build_transition_evidence",
     "detect_scenario_evidence",
     "load_data",
