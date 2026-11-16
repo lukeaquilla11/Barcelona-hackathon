@@ -6,6 +6,7 @@
 
 # parsed caches derived from the match data
 cache/
+data/**/cache_tactical.npz
 
 # local evaluation outputs and public labels
 evaluation/gt/

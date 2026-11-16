@@ -40,6 +40,7 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
 - [run_calibration_experiment.py](./run_calibration_experiment.py) — disjoint public-slice calibration/holdout diagnostics;
 - [sequence_models.py](./sequence_models.py) — anchor-initialized HMM/HSMM, Haiqal-style Bayesian-anchor HMM, and constrained sequence decoders;
 - [haiqal_baseline.py](./haiqal_baseline.py) — isolated raw distance/speed/dead-ball baseline adapted from `origin/haiqal`; it does not replace our scenario or anchor decisions;
+- [pipeline.py](./pipeline.py) — stable orchestration wrappers for loading data, building observations, adding scenario/probability/transition evidence, adding Haiqal observations, and running a registered model;
 - [scenario_decoder.py](./scenario_decoder.py) — scenario-level decoding helpers;
 - [broadcast_alignment.py](./broadcast_alignment.py) — generic broadcast/tactical alignment audit;
 - [../config/possession_rules.yaml](../config/possession_rules.yaml) — configuration-backed thresholds and windows.
@@ -47,3 +48,11 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
 The root modules remain as compatibility implementations for existing scripts.
 New code should import through the three packages so every model receives the
 same complete engineered feature table.
+
+The latest `origin/haiqal` branch was checked at commit `5092f12`. Its new
+`solution/` model is the same raw distance/speed/Smart-Tagging/dead-ball
+three-state Viterbi approach represented by `haiqal_baseline.py`; it does not
+add a scenario detector, calibrated probability model, or transition ledger.
+The adapter is therefore the maintained comparison boundary, while
+`pipeline.py` keeps its observations composable with our scenario-aware
+models without copying Haiqal's final labels.

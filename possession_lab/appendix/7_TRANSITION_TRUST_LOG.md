@@ -521,3 +521,12 @@ frames. The result supports the architecture and full-match auditability, not
 a claimed public performance gain; private labels are required to decide
 whether the changed restart intervals are correct.
 
+The narrower boundary resolver was also tested. It applies the same evidence
+only at the first proposed H/A or D-to-H/A boundary, with fixed 5, 12, and
+25-frame guards. The 5-frame guard changed 628 full-match frames, compared
+with 5,701 for the broad phase resolver, but its public score was still a tiny
+tie below the active model (`0.891727 / 0.620690 / 0.457143`). Longer guards
+lost transition precision. This confirms the locality principle, but not a
+performance gain; keep the canonical NO_SWITCH candidate for private output
+and retain the boundary variants for further reviewed-window analysis.
+

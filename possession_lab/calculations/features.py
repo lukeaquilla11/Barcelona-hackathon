@@ -55,7 +55,11 @@ def build_engineered_features(
     rules = load_rules() if rules is None else rules
     model = ClosestTeamRuleModel() if model is None else model
     features, _ = model.build_features()
-    paths = asset_paths()
+    # Keep the selected game/data environment attached to the model.  This is
+    # important for reusable wrappers: a caller may point the model at a
+    # private organiser data directory rather than relying on the process-wide
+    # MTAH_DATA_DIR default.
+    paths = asset_paths(game=model.game, data_dir=model.data_dir)
     temporal = add_temporal_features(features, rules)
     temporal = add_reachability_features(temporal, slot_team_map(paths["atd_meta"]), rules)
     temporal = add_missing_ball_trajectory_features(temporal, rules)
@@ -64,7 +68,11 @@ def build_engineered_features(
     temporal = add_transition_forecast_features(temporal, rules)
     temporal = add_switch_confirmation_features(temporal, rules)
     temporal = add_anchor_features(temporal, rules)
-    temporal = add_special_anchor_features(temporal, load_smart_tagging(), rules)
+    temporal = add_special_anchor_features(
+        temporal,
+        load_smart_tagging(game=model.game, data_dir=model.data_dir),
+        rules,
+    )
     temporal = add_boundary_anchor_features(temporal, rules)
     temporal = add_pipeline_evidence_features(temporal, rules, slot_team_map(paths["atd_meta"]))
     temporal = add_reception_outcome_features(temporal)
@@ -75,7 +83,7 @@ def build_engineered_features(
     temporal = add_ball_kick_episode_features(temporal, rules)
     temporal = add_missing_ball_cause_features(temporal)
     temporal = add_anchor_forecast_features(temporal, rules)
-    temporal["graded"] = graded_mask(len(temporal))
+    temporal["graded"] = graded_mask(len(temporal), game=model.game)
     temporal["scenario_context"] = classify_scenarios(temporal)
     temporal["scenario_context_causal"] = classify_scenarios(temporal, causal=True)
     temporal = apply_anchor_hierarchy(temporal, rules)

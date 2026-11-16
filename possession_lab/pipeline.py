@@ -1,0 +1,129 @@
+"""Stable orchestration wrappers for the modular possession pipeline.
+
+The lower-level modules remain independently testable.  This facade gives
+notebooks, organiser scripts, and future models one consistent boundary:
+
+    load data -> observations/calculations -> scenario evidence ->
+    probability/transition evidence -> selected resolver -> H/A/D/X labels
+
+No function in this module reads public ground truth during construction.
+Ground truth belongs only to the evaluator and error-audit notebooks.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+from possession_lab.baseline_pipeline import ClosestTeamRuleModel, load_supplied_frame_table
+from possession_lab.calculations.features import build_engineered_features
+from possession_lab.decoder_experiments import (
+    add_observation_probability_features,
+    add_scenario_episode_features,
+    build_transition_hypothesis_ledger,
+    scenario_confidence_scores,
+)
+from possession_lab.haiqal_baseline import add_evidence_features as add_haiqal_evidence_features
+from possession_lab.models.pipelines import (
+    PipelineSpec,
+    apply_pipeline_spec,
+    available_pipeline_specs,
+)
+from possession_lab.temporal_rules import load_rules
+
+
+def load_data(
+    *,
+    game: str = "BAR-ATH",
+    data_dir: str | Path | None = None,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Load the raw tactical frame table and its audit report."""
+    return load_supplied_frame_table(game=game, data_dir=data_dir)
+
+
+def build_observations(
+    *,
+    model: ClosestTeamRuleModel | None = None,
+    rules: dict[str, Any] | None = None,
+    game: str = "BAR-ATH",
+    data_dir: str | Path | None = None,
+) -> pd.DataFrame:
+    """Build the complete shared observation/calculation table."""
+    resolved_model = model or ClosestTeamRuleModel(game=game, data_dir=data_dir)
+    return build_engineered_features(model=resolved_model, rules=rules)
+
+
+def detect_scenario_evidence(
+    observations: pd.DataFrame,
+    *,
+    include_episode_evidence: bool = True,
+) -> pd.DataFrame:
+    """Attach scenario confidence and episode evidence without labels."""
+    out = scenario_confidence_scores(observations.copy())
+    if include_episode_evidence:
+        out = add_scenario_episode_features(out)
+    return out
+
+
+def build_probability_evidence(
+    observations: pd.DataFrame,
+    *,
+    temperature: float = 1.0,
+) -> pd.DataFrame:
+    """Attach the transparent, currently uncalibrated evidence vector."""
+    return add_observation_probability_features(
+        detect_scenario_evidence(observations),
+        temperature=temperature,
+    )
+
+
+def build_transition_evidence(observations: pd.DataFrame) -> pd.DataFrame:
+    """Build interval-level transition/no-switch hypotheses."""
+    return build_transition_hypothesis_ledger(build_probability_evidence(observations))
+
+
+def add_haiqal_observations(
+    observations: pd.DataFrame,
+    *,
+    game: str = "BAR-ATH",
+    data_dir: str | Path | None = None,
+) -> pd.DataFrame:
+    """Add Haiqal's raw distance/speed/dead-ball clues as observations only."""
+    return add_haiqal_evidence_features(
+        observations,
+        game=game,
+        data_dir=data_dir,
+    )
+
+
+def run_model(
+    observations: pd.DataFrame,
+    *,
+    model_name: str = "protected_aligned_reception",
+    spec: PipelineSpec | None = None,
+    rules: dict[str, Any] | None = None,
+) -> np.ndarray:
+    """Apply one registered decision model to a shared evidence table."""
+    resolved_rules = load_rules() if rules is None else rules
+    if spec is None:
+        specs = available_pipeline_specs()
+        if model_name not in specs:
+            raise ValueError(f"unknown model {model_name!r}; choose from {sorted(specs)}")
+        resolved_spec = specs[model_name]
+    else:
+        resolved_spec = spec
+    return apply_pipeline_spec(observations, resolved_spec, resolved_rules)
+
+
+__all__ = [
+    "add_haiqal_observations",
+    "build_observations",
+    "build_probability_evidence",
+    "build_transition_evidence",
+    "detect_scenario_evidence",
+    "load_data",
+    "run_model",
+]

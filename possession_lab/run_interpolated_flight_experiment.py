@@ -29,6 +29,7 @@ from possession_lab.decoder_experiments import (
     apply_stable_reception_episode_switch,
     restart_control_boundary_labels,
     restart_phase_interval_resolver,
+    restart_phase_boundary_interval_resolver,
     hierarchical_restart_fill_labels,
 )
 from possession_lab.scenario_decoder import decode_scenario_labels
@@ -344,6 +345,27 @@ def main() -> None:
     )
     model.write_submission(restart_phase_output, restart_phase_labels)
     print(restart_phase_output)
+
+    # Local-boundary structural diagnostic: constrain only the first proposed
+    # handoff inside a restart phase, rather than suppressing the full H/A run.
+    # This is the candidate for testing whether the prior restart resolver was
+    # too broad on full-match frames.
+    for guard_frames in (5, 12, 25):
+        restart_phase_boundary_labels = restart_phase_boundary_interval_resolver(
+            temporal,
+            no_switch_labels,
+            minimum_control_run=8,
+            maximum_live_search_frames=75,
+            maximum_boundary_guard_frames=guard_frames,
+            use_tracking_fallback=False,
+            minimum_anchor_confidence=0.85,
+        )
+        restart_phase_boundary_output = (
+            ROOT / "evaluation" / "results"
+            / f"diagnostic_no_switch_restart_phase_boundary_guard{guard_frames:02d}.csv"
+        )
+        model.write_submission(restart_phase_boundary_output, restart_phase_boundary_labels)
+        print(restart_phase_boundary_output)
 
     # Next structural ablations: test the two evidence signals identified by
     # the disagreement audit on top of the current best interval candidate.

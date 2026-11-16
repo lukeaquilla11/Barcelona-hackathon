@@ -27,6 +27,7 @@ These methods remain documented for reproducibility and future live-system work,
 | NO_SWITCH + restart state machine | Uses bounded restart activation, provisional ownership, and sustained control | Macro F1 **0.8245**, spell F1 **0.5931**, transition F1@25 **0.3529**; better than direct restart activation but below the active candidate |
 | Restart state machine + hysteretic handoff | Combines bounded restart timing with delayed ownership handoff | Same **0.8245 / 0.5931 / 0.3529** result; no additional benefit |
 | NO_SWITCH + restart phase interval resolver | Separates restart evidence from ownership and applies it as a shared interval constraint | Exact public tie with the active candidate (**0.8917 / 0.6207 / 0.4571**); changes only ungraded full-match frames, so it is a structural candidate rather than a measured score gain |
+| NO_SWITCH + local restart-boundary guards | Limits restart constraints to the first proposed handoff instead of the whole restart phase | 5/12/25-frame guards produced **0.8917 / 0.6207 / 0.4571**, **0.8917 / 0.6207 / 0.4000**, and **0.8873 / 0.6207 / 0.4000**; less disruptive, but no public improvement |
 
 The active system keeps the useful parts of these ideas as evidence features, but does not let them override stronger anchors or protected `D`/`X` labels.
 

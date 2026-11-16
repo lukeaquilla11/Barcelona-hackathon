@@ -3145,6 +3145,81 @@ def restart_phase_interval_resolver(
     return output.astype("<U1")
 
 
+def restart_phase_boundary_interval_resolver(
+    features: pd.DataFrame,
+    base_labels: np.ndarray,
+    *,
+    minimum_control_run: int = 8,
+    maximum_live_search_frames: int = 75,
+    maximum_boundary_guard_frames: int = 25,
+    use_tracking_fallback: bool = False,
+    minimum_anchor_confidence: float = 0.85,
+) -> np.ndarray:
+    """Apply restart constraints locally around a proposed label boundary.
+
+    The broader restart-phase resolver is useful for auditing, but it can
+    suppress an entire H/A run while a restart phase remains active.  This
+    variant limits the constraint to the boundary where the base candidate
+    first proposes a new owner.  A previous H/A owner is retained only until
+    confirmed control or the bounded guard expires.  A D predecessor is kept
+    until confirmed control when available, but is also bounded so an
+    unconfirmed restart cannot create an unbounded dead-ball spell.
+
+    This function is intentionally a resolver wrapper: it consumes restart
+    evidence and a pre-existing candidate, and never creates an H/A owner from
+    restart context alone.
+    """
+    phased = add_restart_phase_features(
+        features,
+        minimum_control_run=minimum_control_run,
+        maximum_live_search_frames=maximum_live_search_frames,
+        use_tracking_fallback=use_tracking_fallback,
+        minimum_anchor_confidence=minimum_anchor_confidence,
+    )
+    base = np.asarray(base_labels, dtype="<U1")
+    output = base.copy()
+    in_play = graded_mask(len(phased))
+    phase = phased["restart_phase"].to_numpy(object)
+    control_team = phased["restart_phase_team"].to_numpy(object)
+    live_phases = {"PRE_RESTART", "ACTIVE_UNCONTROLLED"}
+    guard = max(0, int(maximum_boundary_guard_frames))
+    search = max(0, int(maximum_live_search_frames))
+
+    # Inspect only boundaries in the supplied candidate.  This is the key
+    # difference from restart_phase_interval_resolver: later frames in the
+    # proposed H/A run are not repeatedly treated as fresh transitions.
+    for position in range(1, len(base)):
+        previous = base[position - 1]
+        candidate = base[position]
+        if candidate not in {"H", "A"} or previous not in {"H", "A", "D"}:
+            continue
+        if candidate == previous or phase[position] not in live_phases:
+            continue
+
+        limit = min(len(base), position + search + 1)
+        control_positions = np.flatnonzero(
+            (phase[position:limit] == "CONTROL_CONFIRMED")
+            & (control_team[position:limit] == candidate)
+        )
+        control_position = (
+            position + int(control_positions[0]) if control_positions.size else None
+        )
+        if control_position is None:
+            boundary_end = min(len(base), position + guard)
+        else:
+            boundary_end = min(len(base), control_position)
+            if boundary_end > position + guard:
+                boundary_end = min(len(base), position + guard)
+
+        if previous in {"H", "A"}:
+            output[position:boundary_end] = previous
+        elif previous == "D":
+            output[position:boundary_end] = "D"
+
+    output[~in_play] = "X"
+    return output.astype("<U1")
+
+
 def restart_provisional_labels(
     features: pd.DataFrame,
     base_labels: np.ndarray,
