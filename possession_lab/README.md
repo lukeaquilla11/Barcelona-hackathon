@@ -44,6 +44,11 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
 - [pipeline.py](./pipeline.py) — stable orchestration wrappers for loading data, building observations, adding scenario/probability/transition evidence, adding Haiqal observations, and running a registered model;
 - [scenario_decoder.py](./scenario_decoder.py) — scenario-level decoding helpers;
 - [broadcast_alignment.py](./broadcast_alignment.py) — generic broadcast/tactical alignment audit;
+- [george_ballfill_adapter.py](./george_ballfill_adapter.py) — optional, source-aware adapter for
+  George's fused broadcast/tactical ball observations. It preserves the tactical ball, records
+  source and uncertainty, and fills only eligible tactical gaps before feature construction;
+- [run_george_ballfill_experiment.py](./run_george_ballfill_experiment.py) — runs the current best
+  visible-ball + NO_SWITCH resolver as a separate George-observation ablation;
 - [../config/possession_rules.yaml](../config/possession_rules.yaml) — configuration-backed thresholds and windows.
 
 The root modules remain as compatibility implementations for existing scripts.

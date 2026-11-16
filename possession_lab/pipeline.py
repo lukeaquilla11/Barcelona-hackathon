@@ -50,10 +50,17 @@ def build_observations(
     rules: dict[str, Any] | None = None,
     game: str = "BAR-ATH",
     data_dir: str | Path | None = None,
+    george_ballfill_path: str | Path | None = None,
+    george_allow_model_filled: bool = False,
 ) -> pd.DataFrame:
     """Build the complete shared observation/calculation table."""
     resolved_model = model or ClosestTeamRuleModel(game=game, data_dir=data_dir)
-    return build_engineered_features(model=resolved_model, rules=rules)
+    return build_engineered_features(
+        model=resolved_model,
+        rules=rules,
+        george_ballfill_path=george_ballfill_path,
+        george_allow_model_filled=george_allow_model_filled,
+    )
 
 
 def detect_scenario_evidence(

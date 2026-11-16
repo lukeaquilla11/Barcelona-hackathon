@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -40,11 +41,14 @@ from possession_lab.decoder_experiments import (
     classify_scenarios,
 )
 from possession_lab.calculations.scenario_evidence import add_scenario_evidence_features
+from possession_lab.george_ballfill_adapter import add_george_ballfill_observations
 
 
 def build_engineered_features(
     model: ClosestTeamRuleModel | None = None,
     rules: dict[str, Any] | None = None,
+    george_ballfill_path: str | Path | None = None,
+    george_allow_model_filled: bool = False,
 ) -> pd.DataFrame:
     """Build the canonical frame table used by every model experiment.
 
@@ -60,6 +64,14 @@ def build_engineered_features(
     # private organiser data directory rather than relying on the process-wide
     # MTAH_DATA_DIR default.
     paths = asset_paths(game=model.game, data_dir=model.data_dir)
+    if george_ballfill_path is not None:
+        features = add_george_ballfill_observations(
+            features,
+            george_ballfill_path,
+            pitch_length_m=float(rules["pitch"]["length_m"]),
+            pitch_width_m=float(rules["pitch"]["width_m"]),
+            allow_model_filled=george_allow_model_filled,
+        )
     temporal = add_temporal_features(features, rules)
     temporal = add_reachability_features(temporal, slot_team_map(paths["atd_meta"]), rules)
     temporal = add_missing_ball_trajectory_features(temporal, rules)
