@@ -16,6 +16,8 @@ from possession_lab.decoder_experiments import (
     bridge_same_team_missing_ball_trajectory,
     scenario_confidence_scores,
     add_observation_probability_features,
+    add_haiqal_transition_evidence,
+    add_transition_hypothesis_features,
     duration_aware_scenario_decode,
     add_scenario_episode_features,
     build_transition_hypothesis_ledger,
@@ -160,6 +162,16 @@ def main() -> None:
     # observations while keeping our scenario, anchor, interval, and decoder
     # layers in control. The independent Haiqal labels are never reused.
     haiqal_temporal = add_haiqal_evidence_features(temporal)
+    # Clean combination experiment: retain Haiqal's raw observations, then
+    # rebuild only our transition trust/interval layers. His standalone HMM
+    # labels are deliberately not imported into this path.
+    haiqal_transition_temporal = add_haiqal_transition_evidence(
+        haiqal_temporal,
+        maximum_contribution=0.04,
+    )
+    haiqal_transition_temporal = add_transition_hypothesis_features(
+        haiqal_transition_temporal
+    )
 
     interpolated = temporal.copy()
     interpolated["recent_flight_evidence"] = temporal["recent_flight_evidence_interpolated"]
@@ -326,6 +338,24 @@ def main() -> None:
     )
     model.write_submission(no_switch_output, no_switch_labels)
     print(no_switch_output)
+
+    # Combined best-model ablation: Haiqal raw observations are allowed to
+    # support a transition hypothesis, but the same visible-ball dead-ball
+    # anchors and NO_SWITCH interval resolver still make the final decision.
+    haiqal_no_switch_labels = retain_no_switch_intervals(
+        haiqal_transition_temporal,
+        visible_settle_labels,
+        minimum_no_switch_probability=0.65,
+        minimum_interval_support=0.60,
+        maximum_interval_frames=300,
+        minimum_prior_team_run_frames=1,
+    )
+    haiqal_no_switch_output = (
+        ROOT / "evaluation" / "results"
+        / "diagnostic_haiqal_visible_ball_no_switch_interval.csv"
+    )
+    model.write_submission(haiqal_no_switch_output, haiqal_no_switch_labels)
+    print(haiqal_no_switch_output)
 
     # Shared restart-phase constraint: the restart detector contributes phase
     # and switch permission to the interval resolver instead of writing a

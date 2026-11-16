@@ -40,6 +40,7 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
 - [run_calibration_experiment.py](./run_calibration_experiment.py) — disjoint public-slice calibration/holdout diagnostics;
 - [sequence_models.py](./sequence_models.py) — anchor-initialized HMM/HSMM, Haiqal-style Bayesian-anchor HMM, and constrained sequence decoders;
 - [haiqal_baseline.py](./haiqal_baseline.py) — isolated raw distance/speed/dead-ball baseline adapted from `origin/haiqal`; it does not replace our scenario or anchor decisions;
+- `diagnostic_haiqal_visible_ball_no_switch_interval` — evidence-only integration of Haiqal's closeness observation into the best visible-ball + NO_SWITCH resolver. It is retained as a reproducible ablation, not promoted: it currently produces exactly the same labels and public metrics as the best model.
 - [pipeline.py](./pipeline.py) — stable orchestration wrappers for loading data, building observations, adding scenario/probability/transition evidence, adding Haiqal observations, and running a registered model;
 - [scenario_decoder.py](./scenario_decoder.py) — scenario-level decoding helpers;
 - [broadcast_alignment.py](./broadcast_alignment.py) — generic broadcast/tactical alignment audit;

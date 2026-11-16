@@ -1563,6 +1563,51 @@ def add_transition_trust_features(
     return out
 
 
+def add_haiqal_transition_evidence(
+    features: pd.DataFrame,
+    *,
+    maximum_contribution: float = 0.04,
+) -> pd.DataFrame:
+    """Add Haiqal's raw closeness as a weak transition observation.
+
+    Haiqal's standalone model uses distance/speed observations in its own
+    HMM.  This adapter does not import that HMM path or its labels.  It adds
+    only a small signed closeness contribution to the already-computed
+    transition trust vector, after the current pipeline has constructed
+    anchors and reception evidence.  The contribution is intentionally
+    bounded and is therefore a signal ablation, not a newly fitted model.
+
+    The downstream interval builder still decides between ``SWITCH_CANDIDATE``,
+    ``NO_SWITCH``, and ``CONTESTED``; closeness alone cannot create a switch.
+    """
+    out = features.copy()
+    if "haiqal_closeness_score" not in out:
+        return out
+
+    closeness = pd.to_numeric(out["haiqal_closeness_score"], errors="coerce").fillna(0.0)
+    closeness = np.clip(closeness.to_numpy(float) / 3.0, -1.0, 1.0)
+    contribution = float(max(0.0, maximum_contribution))
+
+    trust_h = pd.to_numeric(
+        out.get("transition_trust_H", pd.Series(0.0, index=out.index)),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    trust_a = pd.to_numeric(
+        out.get("transition_trust_A", pd.Series(0.0, index=out.index)),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    out["transition_trust_H"] = np.clip(
+        trust_h + contribution * np.maximum(closeness, 0.0), 0.0, 1.0
+    )
+    out["transition_trust_A"] = np.clip(
+        trust_a + contribution * np.maximum(-closeness, 0.0), 0.0, 1.0
+    )
+    out["transition_haiqal_closeness_support_H"] = np.maximum(closeness, 0.0)
+    out["transition_haiqal_closeness_support_A"] = np.maximum(-closeness, 0.0)
+    out["transition_haiqal_evidence_weight"] = contribution
+    return out
+
+
 def add_transition_hypothesis_features(
     features: pd.DataFrame,
     *,
