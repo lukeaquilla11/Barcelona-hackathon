@@ -670,8 +670,12 @@ def plot_transition_signals_window(
             ends = np.flatnonzero(unavailable & ~np.r_[unavailable[1:], False])
             for left, right in zip(starts, ends):
                 ax.axvspan(x[left] - 0.5, x[right] + 0.5, color="#777777", alpha=0.14, lw=0)
-        missing = window.get("ball_x", pd.Series(np.nan, index=window.index)).isna().to_numpy()
-        missing |= window.get("ball_y", pd.Series(np.nan, index=window.index)).isna().to_numpy()
+        # ``to_numpy`` may return a read-only view; build a fresh boolean
+        # result instead of mutating it in place with ``|=``.
+        missing = (
+            window.get("ball_x", pd.Series(np.nan, index=window.index)).isna().to_numpy(bool)
+            | window.get("ball_y", pd.Series(np.nan, index=window.index)).isna().to_numpy(bool)
+        )
         starts = np.flatnonzero(missing & ~np.r_[False, missing[:-1]])
         ends = np.flatnonzero(missing & ~np.r_[missing[1:], False])
         for left, right in zip(starts, ends):
