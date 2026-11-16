@@ -23,8 +23,8 @@ Use that same template when presenting a result:
 4. **Pipeline** — how does the active `possession_lab` runner consume the shared evidence?
 5. **Evaluation** — what does the public sanity slice show, and which uncertainty remains?
 
-The previous registry-based runner is preserved as the historical
-The old legacy runner was retired because it referenced obsolete model names; it is not part of the presentation path. The current 08 notebook calls
+The old registry-based runner was retired because it referenced obsolete model
+names; it is not part of the presentation path. The current 08 notebook calls
 `possession_lab/run_interpolated_flight_experiment.py` directly, so it runs the candidate that
 actually produced the best public result rather than selecting the older `possession` registry
 model.
@@ -52,23 +52,27 @@ authoritative versions or their conclusions are already recorded as notes.
 
 ## Helper-first execution
 
-The notebooks call the public pipeline helpers rather than reimplementing calculations. The pipeline is deliberately only three calls: features, scenarios, then model:
+The notebooks call the active `possession_lab` helpers rather than reimplementing calculations. The
+main runner is:
 
 ```python
-from possession.pipeline import build_evidence_table, detect_scenarios, run_decision_pipeline, select_model
+from possession_lab.pipeline import build_observations, detect_scenario_evidence, build_transition_evidence, run_model
 
-features = build_evidence_table()
-features = detect_scenarios(features)
-model = select_model("evidence_bounded_deadball")
-features, labels = run_decision_pipeline(features, spec=model)
+observations = build_observations()
+evidence = detect_scenario_evidence(observations)
+transition_evidence = build_transition_evidence(evidence)
+labels = run_model(transition_evidence, model_name="protected_aligned_reception")
 ```
+
+For the organiser-facing full run, use `python -m possession_lab.run_interpolated_flight_experiment`;
+it writes the current visible-ball + `NO_SWITCH` candidate and all declared diagnostics.
 
 To compare the independently developed `stage/hq` decoder without changing the
 shared evidence construction, select it by name:
 
 ```python
 stage_hq = select_model("stage_hq_viterbi")
-features, labels = run_decision_pipeline(features, spec=stage_hq)
+labels = run_model(observations, model_name="stage_hq_viterbi")
 ```
 
 This is intentionally a decoder comparison: scenarios and anchors are still
@@ -89,14 +93,14 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
 
 - [possession_lab/](../possession_lab/) — current scenario, transition, missing-ball, and candidate runner implementation used by notebook 08;
 
-- [calculations/](../possession/calculations/) — one canonical `build_engineered_features()` composition;
-- [scenarios/](../possession/scenarios/) — public scenario, anchor, reception, and boundary API;
-- [models/](../possession/models/) — public submission-model and decoder API;
-- [baseline_pipeline.py](../possession/baseline_pipeline.py) — loading, auditing, frame time, distances, and submission writing;
-- [temporal_rules.py](../possession/temporal_rules.py) — temporal features, pressure, reachability, anchors, receptions, and scenarios;
-- [decoder_experiments.py](../possession/decoder_experiments.py) — confidence evidence, bounded resolvers, and decoders;
-- [scenario_decoder.py](../possession/scenario_decoder.py) — scenario-level decoding helpers;
-- [broadcast_alignment.py](../possession/broadcast_alignment.py) — generic broadcast/tactical alignment audit;
+- [calculations/](../possession_lab/calculations/) — one canonical `build_engineered_features()` composition;
+- [scenarios/](../possession_lab/scenarios/) — scenario, anchor, reception, and boundary API;
+- [models/](../possession_lab/models/) — model specifications and decoder API;
+- [baseline_pipeline.py](../possession_lab/baseline_pipeline.py) — loading, auditing, frame time, distances, and submission writing;
+- [temporal_rules.py](../possession_lab/temporal_rules.py) — temporal features, pressure, reachability, anchors, receptions, and scenarios;
+- [decoder_experiments.py](../possession_lab/decoder_experiments.py) — confidence evidence, bounded resolvers, and decoders;
+- [scenario_decoder.py](../possession_lab/scenario_decoder.py) — scenario-level decoding helpers;
+- [broadcast_alignment.py](../possession_lab/broadcast_alignment.py) — generic broadcast/tactical alignment audit;
 - [../config/possession_rules.yaml](../config/possession_rules.yaml) — configuration-backed thresholds and windows.
 
 The root modules remain as compatibility implementations for existing scripts.

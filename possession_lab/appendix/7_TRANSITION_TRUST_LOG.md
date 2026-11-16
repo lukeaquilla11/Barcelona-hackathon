@@ -201,6 +201,28 @@ The next decoder should consume this ledger as transition costs and hard
 constraints, rather than treating every frame's nearest-team observation as an
 emission label.
 
+## Final public audit and private-match policy
+
+The current visible-ball plus `NO_SWITCH` interval resolver was re-evaluated
+with the new soft contact/arrival channel, George observations, Haiqal bounded
+support, and the resolver-profile sweep. The representative public result is
+Macro-F1 **0.8917**, Spell-F1 **0.6207**, and Transition F1@25 **0.4571**.
+Those additions either changed no public labels or remained tied, so they are
+kept as uncertainty/evidence channels rather than claimed performance gains.
+
+The public disagreement audit found 820 graded errors. The largest groups were
+H→A and A→H runs inside contested/unknown/flight contexts, plus D→A runs near
+unknown/flight boundaries. Density, significant-player counts, pressure, and
+landing-area crowding were higher in errors than correct frames. This is a
+useful ambiguity signal: it should make the resolver preserve `CONTESTED` or
+lower switch trust, not assign the nearest opposing player as owner.
+
+For the private full match, use the balanced-current resolver and retain the
+full evidence ledger. Do not choose conservative/aggressive settings from this
+five-minute slice: all five tested profiles tied publicly, while aggressive
+profiles changed hundreds of ungraded full-match frames. The private output is
+therefore a reasoned label path, not a public-label extrapolation.
+
 ## How Viterbi and HSMM should fit
 
 The recommended order is:

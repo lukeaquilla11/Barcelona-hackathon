@@ -20,6 +20,13 @@ The path is deliberately **Problem → Idea → Construction → Pipeline → Ev
 Core conclusion: the observations are useful; mapping them to confidence and
 H/A/D labels is the bottleneck. No fixed D hold duration is used.
 
+The current organiser-facing winner is `diagnostic_visible_ball_no_switch_interval`
+(Macro-F1 `0.8917`, Spell-F1 `0.6207`, Transition F1@25 `0.4571` on the public
+five-minute slice). Its resolver is the balanced-current profile. George,
+Haiqal, and Kinson remain optional observation adapters: they may add coverage
+or auxiliary evidence on the private full match, but their final labels never
+override our anchors or interval hypotheses.
+
 ## Appendix
 
 The [appendix/](./appendix/) folder contains supporting definitions, the

@@ -197,6 +197,31 @@ resolver or using hackathon ground truth.
 
 The latest verified no-switch interval candidate reports Macro-F1 `0.8917`, mean Spell-F1 `0.6207`, and transition F1@25 `0.4571` on the available public sanity evaluation. The earlier aligned reception reference reports Macro-F1 `0.7736` and mean Spell-F1 `0.5677`. The notebook displays the current scoreboard after running, so result tables are not maintained manually here.
 
+### Resolver conservatism sweep
+
+The interval resolver was tested with five predeclared profiles: conservative-long,
+conservative, balanced-current, aggressive, and aggressive-short. They vary only
+the no-switch evidence gate, support fraction, maximum interval length, and prior
+run requirement. All five produced the same public result: Macro-F1 `0.8917`,
+Spell-F1 `0.6207`, and Transition F1@25 `0.4571`. The conservative profiles
+were identical to the current public labels; the aggressive profiles changed
+561 and 674 full-timeline frames respectively, but none was in the public scored
+window. We therefore keep the balanced-current profile: it is not proven to be
+the private optimum, but it is the least arbitrary middle policy and avoids
+selecting a private behaviour from an ungraded slice.
+
+### Density and pressure audit
+
+Player density was already present in the feature layer through significant-player
+counts, opponent density, closing speed, pass options, pressure, crowd score, and
+landing-area density. The disagreement audit shows these features are informative
+about ambiguity: public error frames have higher density and more significant
+players than correct frames. They are therefore useful to increase `CONTESTED`
+or reduce transition trust. They are not reliable enough to choose H or A by
+themselves, because the same crowded pattern describes a successful pressured
+control, a deflection, and a genuine turnover. No new density-based hard switch
+was promoted.
+
 ## Missing-ball trajectory audit
 
 The feature table now also audits internal ball-coordinate gaps using the two

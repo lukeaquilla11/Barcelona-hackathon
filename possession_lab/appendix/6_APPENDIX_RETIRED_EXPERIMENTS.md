@@ -31,6 +31,41 @@ These methods remain documented for reproducibility and future live-system work,
 
 The active system keeps the useful parts of these ideas as evidence features, but does not let them override stronger anchors or protected `D`/`X` labels.
 
+## Final robustness checks
+
+### Resolver aggressiveness
+
+Five predeclared conservative-to-aggressive interval profiles were run after the
+current best model was fixed. Every profile scored **0.8917 Macro-F1 / 0.6207
+Spell-F1 / 0.4571 Transition F1@25** on the public slice. Conservative profiles
+made no public changes; aggressive profiles changed 561–674 full-match frames,
+all outside the scored public window. This is not evidence that aggressive
+handoffs are better on the private match. It is evidence that the public slice
+cannot identify this hyperparameter. The balanced current resolver is retained.
+
+### Density/pressure as a transition-risk signal
+
+The evaluation-only disagreement audit added opponent density, pressure, closing
+speed, pass options, significant-player counts, crowd score, and landing-area
+density. Error frames were more crowded on average, especially in contested,
+unknown, and flight contexts. The signal is therefore useful for lowering trust
+or preserving `CONTESTED`; it is not a safe direct H/A switch. A hard density
+decoder was not promoted because crowding is compatible with both a pressured
+retention and a turnover.
+
+### Collaborator integration conclusion
+
+George's ballfill is best placed before feature construction, with source and
+uncertainty retained. It improves upstream ball coverage but tied the public
+labels in this slice. Haiqal's clues are best placed as bounded auxiliary
+observations; they also tied the public labels. Kinson's branch is an independent
+HMM/Viterbi system with homography weighting and Smart Tag priors; its standalone
+decoder is not compatible with our anchor protections and is not imported as
+truth. Its probabilities can be capped as auxiliary evidence, but the tested
+bounded combinations produced no label change. Event-derived silver labels are
+proxy training targets, not hackathon ground truth, and do not establish private
+generalisation.
+
 ## Potential signals worth pursuing
 
 The disagreement audit does not justify adding many named scenarios. The

@@ -416,6 +416,58 @@ def main() -> None:
     model.write_submission(no_switch_output, no_switch_labels)
     print(no_switch_output)
 
+    # Predeclared resolver-profile sweep.  These profiles vary only the
+    # interval decision policy; they do not read public labels or fit to the
+    # five-minute evaluation slice.  A lower no-switch gate and longer
+    # interval are more conservative about accepting a handoff, while a
+    # higher gate and shorter interval are more willing to release the prior
+    # team.  Keep every profile as a separate artifact so 09 can rank both
+    # frame and spell behaviour instead of silently selecting a threshold.
+    resolver_profiles = {
+        "conservative_long": {
+            "minimum_no_switch_probability": 0.55,
+            "minimum_interval_support": 0.50,
+            "maximum_interval_frames": 600,
+            "minimum_prior_team_run_frames": 1,
+        },
+        "conservative": {
+            "minimum_no_switch_probability": 0.60,
+            "minimum_interval_support": 0.55,
+            "maximum_interval_frames": 450,
+            "minimum_prior_team_run_frames": 1,
+        },
+        "balanced_current": {
+            "minimum_no_switch_probability": 0.65,
+            "minimum_interval_support": 0.60,
+            "maximum_interval_frames": 300,
+            "minimum_prior_team_run_frames": 1,
+        },
+        "aggressive": {
+            "minimum_no_switch_probability": 0.75,
+            "minimum_interval_support": 0.70,
+            "maximum_interval_frames": 200,
+            "minimum_prior_team_run_frames": 2,
+        },
+        "aggressive_short": {
+            "minimum_no_switch_probability": 0.80,
+            "minimum_interval_support": 0.80,
+            "maximum_interval_frames": 150,
+            "minimum_prior_team_run_frames": 3,
+        },
+    }
+    for profile_name, profile_kwargs in resolver_profiles.items():
+        profile_labels = retain_no_switch_intervals(
+            temporal,
+            visible_settle_labels,
+            **profile_kwargs,
+        )
+        profile_output = (
+            ROOT / "evaluation" / "results"
+            / f"diagnostic_resolver_profile_{profile_name}.csv"
+        )
+        model.write_submission(profile_output, profile_labels)
+        print(profile_output)
+
     # Optional Kinson integration.  The supervised classifier is kept as an
     # independent observation expert: it sees the canonical (and, when
     # requested, George-observed) coordinates, contributes only frame-aligned
@@ -1038,6 +1090,11 @@ def main() -> None:
         "observation_probability_contest_support",
         "scenario_significant_player_count", "scenario_home_significant_count",
         "scenario_away_significant_count", "scenario_player_density_near_ball",
+        "candidate_pressure_m", "candidate_opponent_density_5m",
+        "candidate_pass_options_15m", "opponent_closing_speed_mps",
+        "short_option_blocked", "gegenpress_score", "pressure_switch_score",
+        "landing_player_density_signal", "landing_pass_options_15m",
+        "reception_pressure_score", "reception_pressure_context",
         "scenario_receiver_path_support_H", "scenario_receiver_path_support_A",
         "scenario_crowd_score", "scenario_balanced_crowd_candidate",
         "scenario_crowd_episode_candidate",

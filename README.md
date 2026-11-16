@@ -4,7 +4,10 @@ Our entry for [More than a Hack 2027](https://github.com/metrica-sports/more-tha
 
 ## Public helper API
 
-The pipeline is intentionally thin. Use the public façade in `possession/pipeline.py` from notebooks and scripts; it only composes feature construction, scenario detection, and model application:
+The active implementation is in `possession_lab/`. The older `possession/`
+package is retained for compatibility and comparison baselines. The pipeline is
+intentionally modular: notebooks and scripts call reusable functions rather
+than reimplementing feature construction or decision logic:
 
 - `build_evidence_table()` — load the supplied data and calculate the complete frame-level feature table;
 - `detect_scenarios()` — attach scenario confidence and episode evidence;
@@ -27,7 +30,11 @@ The pipeline keeps evidence construction separate from decision policy:
 
 The runner is deliberately thin: it calls the reusable helpers, passes their shared evidence to one selected model policy, and returns frame-aligned labels. The notebooks are the organiser-facing explanation of the observations; helper modules contain the implementation.
 
-The active implementation is organised under [`possession_lab/`](./possession_lab/): measurement and scenario evidence come first, anchors and bounded transition hypotheses resolve uncertainty, and model/evaluation runners consume that shared table. Read the notebooks as one story: **Problem → Idea → Construction → Pipeline → Evaluation**.
+The active implementation is organised under [`possession_lab/`](./possession_lab/):
+raw tracking and optional ball observations become motion/missing-ball features,
+then scenarios and anchors, then bounded transition hypotheses and a shared
+interval resolver. The final labels are `H/A/D/X`. Read the notebooks as one
+story: **Problem → Idea → Construction → Pipeline → Evaluation**.
 
 The current organiser-facing run is [notebooks/08_run_pipeline.ipynb](./notebooks/08_run_pipeline.ipynb).
 It executes the newer `possession_lab/run_interpolated_flight_experiment.py` runner and writes
@@ -48,12 +55,16 @@ nearest-player, ball-speed, visibility, player-activity, out-of-play, and weak
 Smart-Tagging evidence handling. It is a comparison baseline, not a replacement
 for the richer physics-veto policy.
 
-Haiqal's branch contributed two useful integration ideas: reusable scenario
-evidence over a window and a clean raw distance/speed/dead-ball Viterbi baseline.
-Both are retained as modular comparisons. The raw clues and Bayesian/HSMM
-decoders did not improve the current public result when combined with our
-scenario/transition ledger, so they remain diagnostic rather than active
-ownership rules.
+Haiqal's branch contributed reusable windowed evidence and a raw
+distance/speed/dead-ball Viterbi baseline. George's branch contributed a
+source-aware ball-observation/fill layer. Kinson's branch contributed a
+homography-weighted HMM/Viterbi baseline and externally trained parameter ideas.
+The safe integration boundary is observation-level: George can improve the ball
+input before feature construction, while Haiqal/Kinson outputs can only be
+bounded auxiliary evidence. Their final labels are never copied into the active
+resolver. On the public slice these combinations tied the current best rather
+than improving it, so they remain auditable optional layers for the private
+full-match run.
 
 `evidence_bounded_deadball` is an additional diagnostic policy: Smart Tagging
 provides restart context, while D is released only where a post-restart H/A
