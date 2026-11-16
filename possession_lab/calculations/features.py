@@ -34,6 +34,7 @@ from possession_lab.temporal_rules import (
     load_rules,
 )
 from possession_lab.decoder_experiments import (
+    add_contact_arrival_coherence_features,
     add_scenario_episode_features,
     add_missing_ball_cause_features,
     add_transition_hypothesis_features,
@@ -99,6 +100,7 @@ def build_engineered_features(
     temporal["scenario_context"] = classify_scenarios(temporal)
     temporal["scenario_context_causal"] = classify_scenarios(temporal, causal=True)
     temporal = apply_anchor_hierarchy(temporal, rules)
+    temporal = add_contact_arrival_coherence_features(temporal)
     temporal = add_transition_trust_features(
         temporal,
         max_anchor_gap_frames=int(rules["transition_forecast"]["anchor_lookahead_frames"]),

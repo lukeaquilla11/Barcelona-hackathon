@@ -1521,6 +1521,13 @@ def add_transition_trust_features(
     arrival_h = 0.55 * arrival_h + 0.45 * consensus_h
     arrival_a = 0.55 * arrival_a + 0.45 * consensus_a
 
+    coherence_h = np.clip(
+        numeric("h_contact_arrival_coherence", 0.0), 0.0, 1.0
+    )
+    coherence_a = np.clip(
+        numeric("a_contact_arrival_coherence", 0.0), 0.0, 1.0
+    )
+
     reception_h = numeric("reception_score_H", 0.0)
     reception_a = numeric("reception_score_A", 0.0)
     reception_signal = numeric("controlled_reception_signal_score", 0.0)
@@ -1566,6 +1573,7 @@ def add_transition_trust_features(
         + 0.07 * arrival_h
         + 0.06 * contact_change
         + 0.05 * flight.astype(float)
+        + 0.05 * coherence_h
     )
     trust_a = (
         0.28 * anchor_a
@@ -1576,6 +1584,7 @@ def add_transition_trust_features(
         + 0.07 * arrival_a
         + 0.06 * contact_change
         + 0.05 * flight.astype(float)
+        + 0.05 * coherence_a
     )
     trust_h = np.clip(trust_h - 0.10 * np.nan_to_num(contest, nan=0.0) - 0.10 * occluded, 0.0, 1.0)
     trust_a = np.clip(trust_a - 0.10 * np.nan_to_num(contest, nan=0.0) - 0.10 * occluded, 0.0, 1.0)
@@ -1609,6 +1618,78 @@ def add_transition_trust_features(
         [~opposite_anchor_pair, occluded, np.nan_to_num(contest, nan=0.0) >= 0.6],
         ["NO_OPPOSITE_ANCHORS", "OCCLUDED", "CONTESTED"],
         default="RECEPTION_AND_ANCHOR_EVIDENCE",
+    )
+    return out
+
+
+def add_contact_arrival_coherence_features(
+    features: pd.DataFrame,
+    *,
+    contact_lookback_frames: int = 12,
+    arrival_lookahead_frames: int = 25,
+) -> pd.DataFrame:
+    """Build soft event-level contact-to-arrival evidence for handoffs.
+
+    A single frame can show a direction change near a defender or a player
+    entering the ball radius without a real change of control. This feature
+    links two different observations over a bounded interval: a plausible
+    contact/motion change followed by team-level arrival, reception, or
+    post-control support. It is evidence for a transition hypothesis, not a
+    transition decision.
+    """
+    out = features.copy()
+
+    def numeric(name: str, default: float = 0.0) -> np.ndarray:
+        return pd.to_numeric(
+            out.get(name, pd.Series(default, index=out.index)), errors="coerce"
+        ).fillna(default).to_numpy(float)
+
+    def boolean(name: str) -> np.ndarray:
+        return out.get(
+            name, pd.Series(False, index=out.index)
+        ).fillna(False).to_numpy(bool)
+
+    candidate = out.get(
+        "reception_control_team_geometry",
+        out.get("likely_receiver_team", pd.Series(None, index=out.index)),
+    ).to_numpy(object)
+    deceleration = np.clip(numeric("reception_ball_deceleration_mps") / 4.0, 0.0, 1.0)
+    direction = np.clip(numeric("ball_direction_change_rad") / 1.2, 0.0, 1.0)
+    flight = boolean("recent_flight_evidence") | (numeric("ball_speed_evidence_mps") >= 8.0)
+    contact = np.maximum(deceleration, direction * flight.astype(float))
+
+    lookback = max(1, int(contact_lookback_frames))
+    lookahead = max(1, int(arrival_lookahead_frames))
+    for team in ("H", "A"):
+        reception = np.clip(numeric(f"reception_score_{team}"), 0.0, 1.0)
+        consensus = np.clip(numeric(f"{team.lower()}_arrival_consensus_score"), 0.0, 1.0)
+        post_control = np.clip(numeric(f"post_control_score_{team}"), 0.0, 1.0)
+        future_near = np.clip(
+            numeric(f"{team.lower()}_receiver_future_near_fraction"), 0.0, 1.0
+        )
+        arrival = np.maximum.reduce([reception, consensus, post_control, future_near])
+
+        contact_team = contact * (candidate == team)
+        contact_past = pd.Series(contact_team).rolling(
+            lookback, min_periods=1
+        ).max().to_numpy(float)
+        future_arrival = pd.Series(arrival[::-1]).rolling(
+            lookahead, min_periods=1
+        ).max().to_numpy(float)[::-1]
+        coherence = np.sqrt(np.clip(contact_past * future_arrival, 0.0, 1.0))
+        out[f"{team.lower()}_contact_arrival_coherence"] = coherence
+        out[f"{team.lower()}_contact_past_support"] = contact_past
+        out[f"{team.lower()}_arrival_future_support"] = future_arrival
+
+    h = out["h_contact_arrival_coherence"].to_numpy(float)
+    a = out["a_contact_arrival_coherence"].to_numpy(float)
+    out["contact_arrival_coherence_score"] = np.maximum(h, a)
+    out["contact_arrival_coherence_margin"] = h - a
+    out["contact_arrival_coherence_team"] = np.select(
+        [h > a + 0.08, a > h + 0.08], ["H", "A"], default=None
+    )
+    out["contact_arrival_coherence_available"] = (
+        out["contact_arrival_coherence_score"] > 0.0
     )
     return out
 
@@ -2068,6 +2149,8 @@ def build_transition_hypothesis_ledger(features: pd.DataFrame) -> pd.DataFrame:
             evidence.append("DIRECTION_CHANGE")
         if numeric(interval, "reception_ball_deceleration_mps", 0.0).max(skipna=True) >= 1.0:
             evidence.append("CONTACT_DECELERATION")
+        if numeric(interval, "contact_arrival_coherence_score", 0.0).max(skipna=True) >= 0.45:
+            evidence.append("CONTACT_ARRIVAL_COHERENCE")
         if interval.get("kick_episode_start", pd.Series(False, index=interval.index)).fillna(False).any():
             evidence.append("KICK_MOTION")
         if numeric(interval, "contest_score", 0.0).max(skipna=True) >= 0.6:
@@ -2128,6 +2211,15 @@ def build_transition_hypothesis_ledger(features: pd.DataFrame) -> pd.DataFrame:
                 "p_A": float(numeric(interval, "transition_hypothesis_p_A", 0.0).max(skipna=True)),
                 "p_no_switch": float(numeric(interval, "transition_hypothesis_p_no_switch", 0.0).max(skipna=True)),
                 "p_contested": float(numeric(interval, "transition_hypothesis_p_contested", 0.0).max(skipna=True)),
+                "contact_arrival_coherence_max": float(
+                    numeric(interval, "contact_arrival_coherence_score", 0.0).max(skipna=True)
+                ),
+                "contact_arrival_coherence_margin": float(
+                    numeric(interval, "contact_arrival_coherence_margin", 0.0).mean()
+                ),
+                "contact_arrival_coherence_team": first_team(
+                    interval, "contact_arrival_coherence_team"
+                ),
                 "no_switch_support_max": float(
                     numeric(interval, "transition_no_switch_support", 0.0).max(skipna=True)
                 ),

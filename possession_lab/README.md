@@ -64,6 +64,11 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
   contact plus team-arrival consensus without suppressing a whole restart interval; on the public
   slice it fell to Macro-F1 `0.8833`, so the consensus/continuity features remain evidence columns
   while this hard resolver stays in the appendix;
+- `contact_arrival_coherence` — retained soft evidence channel. It links a plausible ball-contact
+  event (deceleration or direction change) to a bounded future team-arrival/reception/post-control
+  observation. It is exposed in the scenario-confidence and transition-ledger audits, but it did
+  not change any full-length labels or public metrics in the current run, so it is not promoted as
+  a hard handoff rule;
 - `--kinson-model /path/to/model.joblib` — optional Kinson-compatible supervised evidence
   adapter. It attaches frame-aligned H/A/D probabilities after our observation and feature layers,
   then tests capped transition support (`0`, `0.02`, `0.04`, `0.08`) through our interval resolver.
