@@ -499,3 +499,25 @@ cross-team transition is trustworthy: the high-entropy H/A errors commonly have
 should use this audit to refine receiver/transition ownership evidence, not
 expand the dead-ball rule again.
 
+## Restart phase composition
+
+The next structural implementation keeps restart observations separate from
+possession labels:
+
+`restart observations -> restart phase/evidence -> transition constraints ->
+shared interval resolver -> final H/A/D/X label`
+
+`add_restart_phase_features` emits `OUTSIDE_RESTART`, `PRE_RESTART`,
+`ACTIVE_UNCONTROLLED`, and `CONTROL_CONFIRMED`. The resolver blocks a new H/A
+handoff before control is confirmed and releases an existing `D` only after a
+sustained independent team anchor. Restart context therefore constrains a
+transition hypothesis; it does not create possession merely because players
+reposition or a Smart Tag appears.
+
+On the public five-minute evaluation, this candidate tied the active output
+exactly: macro F1 `0.8917`, spell F1 `0.6207`, transition F1@25 `0.4571`.
+It changed 5,701 full-match frames, but none of the 7,500 graded public
+frames. The result supports the architecture and full-match auditability, not
+a claimed public performance gain; private labels are required to decide
+whether the changed restart intervals are correct.
+

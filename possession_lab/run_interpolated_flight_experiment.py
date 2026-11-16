@@ -28,6 +28,7 @@ from possession_lab.decoder_experiments import (
     resolve_aligned_reception_switch,
     apply_stable_reception_episode_switch,
     restart_control_boundary_labels,
+    restart_phase_interval_resolver,
     hierarchical_restart_fill_labels,
 )
 from possession_lab.scenario_decoder import decode_scenario_labels
@@ -324,6 +325,25 @@ def main() -> None:
     )
     model.write_submission(no_switch_output, no_switch_labels)
     print(no_switch_output)
+
+    # Shared restart-phase constraint: the restart detector contributes phase
+    # and switch permission to the interval resolver instead of writing a
+    # provisional possession label first.  This full-length candidate is the
+    # structural test of restart observations -> constraints -> resolver.
+    restart_phase_labels = restart_phase_interval_resolver(
+        temporal,
+        no_switch_labels,
+        minimum_control_run=8,
+        maximum_live_search_frames=75,
+        use_tracking_fallback=False,
+        minimum_anchor_confidence=0.85,
+    )
+    restart_phase_output = (
+        ROOT / "evaluation" / "results"
+        / "diagnostic_no_switch_restart_phase_interval.csv"
+    )
+    model.write_submission(restart_phase_output, restart_phase_labels)
+    print(restart_phase_output)
 
     # Next structural ablations: test the two evidence signals identified by
     # the disagreement audit on top of the current best interval candidate.

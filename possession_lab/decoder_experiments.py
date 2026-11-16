@@ -2987,6 +2987,164 @@ def apply_stable_reception_episode_switch(
     return output.astype("<U1")
 
 
+def add_restart_phase_features(
+    features: pd.DataFrame,
+    *,
+    minimum_control_run: int = 8,
+    maximum_live_search_frames: int = 75,
+    use_tracking_fallback: bool = False,
+    minimum_anchor_confidence: float = 0.85,
+) -> pd.DataFrame:
+    """Expose restart timing as evidence rather than possession labels.
+
+    The phase is one of ``OUTSIDE_RESTART``, ``PRE_RESTART``,
+    ``ACTIVE_UNCONTROLLED``, or ``CONTROL_CONFIRMED``.  Smart Tagging and
+    ball activity open the phase; a sustained team anchor closes the uncertain
+    part.  The function never writes H/A/D/X labels and is therefore safe to
+    pass to a later interval resolver or constrained path decoder.
+    """
+    out = features.copy()
+    n = len(out)
+    context = out.get(
+        "restart_context",
+        out.get("smart_set_piece", pd.Series(False, index=out.index)),
+    ).fillna(False).to_numpy(bool)
+    active = out.get(
+        "restart_ball_active",
+        out.get("restart_live_boundary_anchor", pd.Series(False, index=out.index)),
+    ).fillna(False).to_numpy(bool)
+    live_anchor = out.get(
+        "restart_live_boundary_anchor", pd.Series(False, index=out.index)
+    ).fillna(False).to_numpy(bool)
+    hinted = out.get(
+        "restart_hinted_control_anchor", pd.Series(False, index=out.index)
+    ).fillna(False).to_numpy(bool)
+    fallback = out.get(
+        "restart_fallback_control_anchor", pd.Series(False, index=out.index)
+    ).fillna(False).to_numpy(bool)
+    anchor_team = out.get(
+        "anchor_team", pd.Series(None, index=out.index, dtype=object)
+    ).to_numpy(object)
+    confidence = pd.to_numeric(
+        out.get("anchor_confidence_score", pd.Series(0.0, index=out.index)),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    eligible_control = hinted | (fallback if use_tracking_fallback else False)
+    eligible_control &= np.isin(anchor_team, ["H", "A"])
+    eligible_control &= confidence >= float(minimum_anchor_confidence)
+
+    phase = np.full(n, "OUTSIDE_RESTART", dtype=object)
+    phase[context & ~active] = "PRE_RESTART"
+    phase[context & active] = "ACTIVE_UNCONTROLLED"
+    control_confirmed = np.zeros(n, dtype=bool)
+    control_team = np.full(n, None, dtype=object)
+    control_confidence = np.zeros(n, dtype=float)
+
+    # Search only within a restart episode plus a bounded post-tag window.
+    # This is timing evidence; it does not carry the team through the window.
+    start = 0
+    while start < n:
+        if not context[start]:
+            start += 1
+            continue
+        end = start + 1
+        while end < n and context[end]:
+            end += 1
+        live_positions = np.flatnonzero(live_anchor[start:end] | active[start:end])
+        if live_positions.size == 0:
+            start = end
+            continue
+        live_start = start + int(live_positions[0])
+        search_end = min(n, end + int(maximum_live_search_frames))
+        cursor = live_start
+        while cursor < search_end:
+            if not eligible_control[cursor]:
+                cursor += 1
+                continue
+            team = anchor_team[cursor]
+            run_end = cursor + 1
+            while (
+                run_end < search_end
+                and eligible_control[run_end]
+                and anchor_team[run_end] == team
+            ):
+                run_end += 1
+            if run_end - cursor >= int(minimum_control_run):
+                control_confirmed[cursor:run_end] = True
+                control_team[cursor:run_end] = team
+                control_confidence[cursor:run_end] = confidence[cursor:run_end]
+                phase[cursor:run_end] = "CONTROL_CONFIRMED"
+                break
+            cursor = run_end
+        start = end
+
+    out["restart_phase"] = phase
+    out["restart_phase_active"] = phase != "OUTSIDE_RESTART"
+    out["restart_phase_control_confirmed"] = control_confirmed
+    out["restart_phase_team"] = control_team
+    out["restart_phase_confidence"] = control_confidence
+    out["restart_phase_switch_allowed"] = np.isin(
+        phase, ["CONTROL_CONFIRMED", "OUTSIDE_RESTART"]
+    )
+    out["restart_phase_model"] = "observation_only_restart_phase_v1"
+    return out
+
+
+def restart_phase_interval_resolver(
+    features: pd.DataFrame,
+    base_labels: np.ndarray,
+    *,
+    minimum_control_run: int = 8,
+    maximum_live_search_frames: int = 75,
+    use_tracking_fallback: bool = False,
+    minimum_anchor_confidence: float = 0.85,
+) -> np.ndarray:
+    """Resolve labels using restart phase as a transition constraint.
+
+    ``PRE_RESTART`` and ``ACTIVE_UNCONTROLLED`` block a new H/A handoff but do
+    not invent D.  ``CONTROL_CONFIRMED`` permits the existing resolver's H/A
+    evidence, and can release a D frame only when a sustained anchor names the
+    team.  This is intentionally a shared constraint layer rather than a
+    restart-specific possession classifier.
+    """
+    phased = add_restart_phase_features(
+        features,
+        minimum_control_run=minimum_control_run,
+        maximum_live_search_frames=maximum_live_search_frames,
+        use_tracking_fallback=use_tracking_fallback,
+        minimum_anchor_confidence=minimum_anchor_confidence,
+    )
+    output = np.asarray(base_labels, dtype="<U1").copy()
+    in_play = graded_mask(len(phased))
+    phase = phased["restart_phase"].to_numpy(object)
+    control_team = phased["restart_phase_team"].to_numpy(object)
+
+    # A restart is not allowed to create a new live owner while the ball is
+    # active but control is still unconfirmed.  Preserve the preceding live
+    # team only when the supplied candidate actually proposes a handoff.
+    for position in range(1, len(output)):
+        if phase[position] not in {"PRE_RESTART", "ACTIVE_UNCONTROLLED"}:
+            continue
+        if output[position] not in {"H", "A"}:
+            continue
+        previous = output[position - 1]
+        if previous in {"H", "A"} and previous != output[position]:
+            output[position] = previous
+
+    # A D label can be released at the first confirmed control frame, but only
+    # with the independent sustained anchor team.  No restart hint alone can
+    # create possession.
+    release = (
+        (phase == "CONTROL_CONFIRMED")
+        & (output == "D")
+        & np.isin(control_team, ["H", "A"])
+        & in_play
+    )
+    output[release] = control_team[release]
+    output[~in_play] = "X"
+    return output.astype("<U1")
+
+
 def restart_provisional_labels(
     features: pd.DataFrame,
     base_labels: np.ndarray,
