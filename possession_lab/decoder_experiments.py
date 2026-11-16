@@ -2714,6 +2714,136 @@ def apply_switch_confirmation(
     return output.astype("<U1")
 
 
+def retain_no_switch_intervals(
+    features: pd.DataFrame,
+    base_labels: np.ndarray,
+    *,
+    minimum_no_switch_probability: float = 0.65,
+    minimum_interval_support: float = 0.60,
+    maximum_interval_frames: int = 300,
+    minimum_prior_team_run_frames: int = 1,
+) -> np.ndarray:
+    """Retain the prior team through an ambiguous live-ball interval.
+
+    A nearest-player observation can change before possession has changed. The
+    transition layer already exposes that possibility as ``NO_SWITCH`` versus
+    ``SWITCH_CANDIDATE``, but the earlier decoders only used the candidate
+    branch. This resolver makes the alternative operational: when a proposed
+    H/A run is mostly supported by ``NO_SWITCH`` evidence, and there is no
+    strong new control anchor inside the run, preserve the preceding team.
+
+    This is an interval hypothesis resolver, not a label smoother and not a
+    ground-truth lookup. It uses only derived observations, the existing
+    scenario detector, and the rule-based transition evidence. Explicit D/X
+    frames and strong new anchors remain protected. The result is deliberately
+    exposed as an ablation before promotion to the organiser-facing model.
+    """
+    output = np.asarray(base_labels, dtype="<U1").copy()
+    n_frames = len(features)
+    in_play = graded_mask(n_frames)
+
+    scenario = features.get(
+        "scenario_context_causal",
+        features.get("scenario_context", pd.Series("UNKNOWN", index=features.index)),
+    ).to_numpy(object)
+    live_scenarios = np.isin(
+        scenario,
+        [
+            "BALL_IN_FLIGHT",
+            "CONTESTED",
+            "RECEPTION_CANDIDATE",
+            "MISCONTROL_CANDIDATE",
+            "PRESSURED_CONTROL",
+            "CONTROLLED",
+            "UNKNOWN",
+            "TRANSITION_CANDIDATE",
+        ],
+    )
+    hypothesis = features.get(
+        "transition_hypothesis_state",
+        pd.Series("NO_SWITCH", index=features.index),
+    ).to_numpy(object)
+    p_no_switch = pd.to_numeric(
+        features.get(
+            "transition_hypothesis_p_no_switch",
+            pd.Series(1.0, index=features.index),
+        ),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    anchor_team = features.get(
+        "selected_anchor_team",
+        features.get("anchor_team", pd.Series(None, index=features.index)),
+    ).to_numpy(object)
+    anchor_confidence = pd.to_numeric(
+        features.get(
+            "selected_anchor_confidence",
+            features.get("anchor_confidence_score", pd.Series(0.0, index=features.index)),
+        ),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    reception_signal = features.get(
+        "controlled_reception_signal", pd.Series(False, index=features.index)
+    ).fillna(False).to_numpy(bool)
+    reception_score = pd.to_numeric(
+        features.get(
+            "controlled_reception_signal_score",
+            pd.Series(0.0, index=features.index),
+        ),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+
+    def prior_run_length(position: int, team: str) -> int:
+        cursor = position - 1
+        while cursor >= 0 and output[cursor] == team:
+            cursor -= 1
+        return position - cursor - 1
+
+    position = 1
+    while position < n_frames:
+        previous = output[position - 1]
+        current = output[position]
+        if previous not in {"H", "A"} or current not in {"H", "A"} or previous == current:
+            position += 1
+            continue
+
+        end = position + 1
+        while end < n_frames and output[end] == current:
+            end += 1
+        if end - position > int(maximum_interval_frames):
+            position = end
+            continue
+
+        interval = slice(position, end)
+        support = (
+            in_play[interval]
+            & live_scenarios[interval]
+            & (hypothesis[interval] == "NO_SWITCH")
+            & (p_no_switch[interval] >= float(minimum_no_switch_probability))
+        )
+        support_fraction = float(np.mean(support)) if end > position else 0.0
+        strong_anchor = np.any(
+            (anchor_team[interval] == current)
+            & (anchor_confidence[interval] >= 0.85)
+        )
+        strong_reception = np.any(
+            (reception_signal[interval] & (reception_score[interval] >= 0.55))
+        )
+        enough_prior_context = prior_run_length(position, previous) >= int(
+            minimum_prior_team_run_frames
+        )
+        if (
+            support_fraction >= float(minimum_interval_support)
+            and enough_prior_context
+            and not strong_anchor
+            and not strong_reception
+        ):
+            output[position:end] = previous
+        position = end
+
+    output[~in_play] = "X"
+    return output.astype("<U1")
+
+
 def apply_switch_confirmation_hysteresis(
     features: pd.DataFrame,
     base_labels: np.ndarray,

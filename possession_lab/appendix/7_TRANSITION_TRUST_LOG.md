@@ -116,6 +116,35 @@ particular weighted formula is not yet a better switch decision rule. The next
 change should be evidence weighting/calibration or a transition-specific error
 analysis—not simply lowering the threshold.
 
+### True-switch and restart-activation ablations
+
+The disagreement audit suggested two observations worth testing without using
+the public labels during inference:
+
+1. confirm a switch only when post-contact ball deceleration/direction change,
+   team-level receiver arrival, and persistence of the new controlled state
+   agree;
+2. keep `D` until restart-compatible ball movement agrees with stable
+   team-level control.
+
+The runner evaluated each signal on top of the current `NO_SWITCH` candidate,
+and also evaluated their composition. The direct label rewrites were not
+promoted:
+
+- true-switch confirmation: macro F1 **0.8866**, spell F1 **0.3184**,
+  transition F1@25 **0.3273**;
+- restart activation: macro F1 **0.8234**, spell F1 **0.5600**, transition
+  F1@25 **0.3429**;
+- both signals: macro F1 **0.8183**, spell F1 **0.2880**, transition F1@25
+  **0.2545**.
+
+The first signal appears too eager when used as a direct relabelling rule; the
+second has useful boundary information but loses live-state continuity. The
+correct next construction is therefore not another threshold sweep: retain
+these as evidence channels that adjust interval trust, while keeping explicit
+`NO_SWITCH` and `CONTESTED` hypotheses and requiring persistence before an
+ownership change.
+
 ### Structural interval-hypothesis result
 
 The next pipeline change now separates transition activity from ownership. It

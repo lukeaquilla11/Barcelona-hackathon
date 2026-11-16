@@ -10,6 +10,7 @@ from possession_lab.decoder_experiments import (
     classify_scenarios,
     dead_ball_boundary_evidence,
     low_motion_dead_ball_evidence,
+    retain_no_switch_intervals,
     restart_provisional_labels,
     scenario_gated_labels,
     bridge_same_team_missing_ball_trajectory,
@@ -303,6 +304,71 @@ def main() -> None:
     )
     model.write_submission(visible_settle_output, visible_settle_labels)
     print(visible_settle_output)
+
+    # Structural transition ablation: the visible-ball candidate has strong
+    # dead-ball performance, but its remaining errors are mostly H/A flips
+    # inside flight, contested, reception, and unknown intervals. Retain the
+    # prior team when the interval ledger says NO_SWITCH and no new control
+    # anchor confirms the proposed team. This is an observation-only resolver,
+    # not a public-label correction.
+    no_switch_output = (
+        ROOT / "evaluation" / "results" / "diagnostic_visible_ball_no_switch_interval.csv"
+    )
+    no_switch_labels = retain_no_switch_intervals(
+        temporal,
+        visible_settle_labels,
+        minimum_no_switch_probability=0.65,
+        minimum_interval_support=0.60,
+        maximum_interval_frames=300,
+        minimum_prior_team_run_frames=1,
+    )
+    model.write_submission(no_switch_output, no_switch_labels)
+    print(no_switch_output)
+
+    # Next structural ablations: test the two evidence signals identified by
+    # the disagreement audit on top of the current best interval candidate.
+    # These functions consume only engineered observations; public labels are
+    # joined later by the evaluator and never enter either resolver.
+    true_switch_labels = apply_switch_confirmation(
+        temporal,
+        no_switch_labels,
+        minimum_score=0.65,
+        minimum_run_frames=5,
+    )
+    true_switch_output = (
+        ROOT / "evaluation" / "results"
+        / "diagnostic_no_switch_true_switch_confirmation.csv"
+    )
+    model.write_submission(true_switch_output, true_switch_labels)
+    print(true_switch_output)
+
+    restart_activation_labels = restart_control_boundary_labels(
+        temporal,
+        no_switch_labels,
+        minimum_control_run=8,
+        maximum_live_search_frames=75,
+        use_tracking_fallback=False,
+        minimum_anchor_confidence=0.85,
+    )
+    restart_activation_output = (
+        ROOT / "evaluation" / "results"
+        / "diagnostic_no_switch_restart_activation.csv"
+    )
+    model.write_submission(restart_activation_output, restart_activation_labels)
+    print(restart_activation_output)
+
+    combined_transition_labels = apply_switch_confirmation(
+        temporal,
+        restart_activation_labels,
+        minimum_score=0.65,
+        minimum_run_frames=5,
+    )
+    combined_transition_output = (
+        ROOT / "evaluation" / "results"
+        / "diagnostic_no_switch_true_switch_restart_activation.csv"
+    )
+    model.write_submission(combined_transition_output, combined_transition_labels)
+    print(combined_transition_output)
 
     switch_variants = {
         "baseline_switch_confirmation": {"minimum_score": 0.65, "minimum_run_frames": 5},

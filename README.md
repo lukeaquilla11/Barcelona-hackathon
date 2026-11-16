@@ -31,9 +31,9 @@ The active implementation is organised under [`possession_lab/`](./possession_la
 
 The current organiser-facing run is [notebooks/08_run_pipeline.ipynb](./notebooks/08_run_pipeline.ipynb).
 It executes the newer `possession_lab/run_interpolated_flight_experiment.py` runner and writes
-the `diagnostic_visible_ball_low_motion_dead_ball` candidate. Public scoring and disagreement
+the `diagnostic_visible_ball_no_switch_interval` candidate. Public scoring and disagreement
 plots are in [notebooks/08_model_evaluation.ipynb](./notebooks/08_model_evaluation.ipynb). The earlier registry-based notebook
-is preserved as the historical [notebooks/08_run_pipeline_legacy.ipynb](./notebooks/08_run_pipeline_legacy.ipynb).
+was retired because it referenced obsolete model names; the current 08 notebook is the only presentation runner.
 
 Visual checks are also helper-first. The evidence timeline is a plotting function in
 `possession/calculations/plotting.py`, not notebook-specific labelling logic. The notebooks
@@ -47,6 +47,13 @@ feature/scenario/anchor table as the other models, but retains its simpler
 nearest-player, ball-speed, visibility, player-activity, out-of-play, and weak
 Smart-Tagging evidence handling. It is a comparison baseline, not a replacement
 for the richer physics-veto policy.
+
+Haiqal's branch contributed two useful integration ideas: reusable scenario
+evidence over a window and a clean raw distance/speed/dead-ball Viterbi baseline.
+Both are retained as modular comparisons. The raw clues and Bayesian/HSMM
+decoders did not improve the current public result when combined with our
+scenario/transition ledger, so they remain diagnostic rather than active
+ownership rules.
 
 `evidence_bounded_deadball` is an additional diagnostic policy: Smart Tagging
 provides restart context, while D is released only where a post-restart H/A

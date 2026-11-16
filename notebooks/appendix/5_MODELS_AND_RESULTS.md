@@ -10,7 +10,7 @@ load/audit → distances → temporal features → scenarios/anchors
 → Macro-F1 + Spell-F1 evaluation
 ```
 
-The canonical runner is [`run_interpolated_flight_experiment.py`](./run_interpolated_flight_experiment.py). Reusable functions live in [`baseline_pipeline.py`](./baseline_pipeline.py), [`temporal_rules.py`](./temporal_rules.py), and [`decoder_experiments.py`](./decoder_experiments.py).
+The canonical runner is [`run_interpolated_flight_experiment.py`](../../possession_lab/run_interpolated_flight_experiment.py). Reusable functions live in [`baseline_pipeline.py`](../../possession_lab/baseline_pipeline.py), [`temporal_rules.py`](../../possession_lab/temporal_rules.py), and [`decoder_experiments.py`](../../possession_lab/decoder_experiments.py).
 
 ## Benchmarks as modular pipeline specifications
 
@@ -36,7 +36,7 @@ common engineered features
   → protected H/A/D/X output
 ```
 
-This makes an ablation explicit: removing an anchor or scenario is a declared benchmark choice, not an accidental code edit. The canonical submission remains `protected_aligned_reception`; duration decoding is a diagnostic specification until it improves both Macro-F1 and Spell-F1.
+This makes an ablation explicit: removing an anchor or scenario is a declared benchmark choice, not an accidental code edit. The current best evaluated candidate is `diagnostic_visible_ball_no_switch_interval`; it adds interval-level continuity resolution after visible-ball low-motion/dead-ball handling. Duration decoding remains diagnostic until it improves both Macro-F1 and Spell-F1.
 
 ### What “model” means here
 
@@ -153,13 +153,13 @@ spec = available_pipeline_specs()["anchor_hsmm_diagnostic"]
 labels = apply_pipeline_spec(features, spec, rules)
 ```
 
-The notebook can call the same function with `"protected_aligned_reception"`, `"rule_viterbi_diagnostic"`, `"anchor_hmm_diagnostic"`, or another registered specification. This is a benchmark switch, not hidden tuning.
+The notebook can call the same function with `"protected_aligned_reception"`, `"rule_viterbi_diagnostic"`, `"anchor_hmm_diagnostic"`, or another registered specification. The organiser-facing runner additionally evaluates the current `diagnostic_visible_ball_no_switch_interval` candidate. This is a benchmark switch, not hidden tuning.
 
 EM/Baum–Welch or Bayesian parameter fitting would require reliable labels, defensible priors, or a separate labelled corpus. They remain future research rather than hidden tuning against the public score.
 
 ## Current measured reference
 
-The latest verified aligned reception candidate is reproduced by the notebook and currently reports Macro-F1 `0.7736` and mean Spell-F1 `0.5677` on the available public sanity evaluation. The notebook displays the current scoreboard after running, so result tables are not maintained manually here.
+The latest verified no-switch interval candidate reports Macro-F1 `0.8917`, mean Spell-F1 `0.6207`, and transition F1@25 `0.4571` on the available public sanity evaluation. The earlier aligned reception reference reports Macro-F1 `0.7736` and mean Spell-F1 `0.5677`. The notebook displays the current scoreboard after running, so result tables are not maintained manually here.
 
 ## Missing-ball trajectory audit
 
@@ -209,7 +209,7 @@ frames:
 
 | Candidate | Macro-F1 | Spell-F1 | Decision |
 |---|---:|---:|---|
-| Preferred aligned reception | 0.7736 | 0.5677 | active |
+| Preferred aligned reception | 0.7736 | 0.5677 | historical reference |
 | Add path-agreement hard gate | 0.6732 | 0.5677 | rejected |
 
 The feature stays in the engineered table for diagnostics and future soft

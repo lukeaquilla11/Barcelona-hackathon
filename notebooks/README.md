@@ -24,13 +24,15 @@ Use that same template when presenting a result:
 5. **Evaluation** — what does the public sanity slice show, and which uncertainty remains?
 
 The previous registry-based runner is preserved as the historical
-[08_run_pipeline_legacy.ipynb](./08_run_pipeline_legacy.ipynb); it is not part of the presentation path. The current 08 notebook calls
+The old legacy runner was retired because it referenced obsolete model names; it is not part of the presentation path. The current 08 notebook calls
 `possession_lab/run_interpolated_flight_experiment.py` directly, so it runs the candidate that
 actually produced the best public result rather than selecting the older `possession` registry
 model.
 
-The noisy hand-labelled first-half experiment is archived at
-[appendix/10_first_half_results.ipynb](./appendix/10_first_half_results.ipynb); it is not a benchmark.
+The noisy hand-labelled first-half experiment is not kept as an executable
+notebook: its conclusion is preserved in
+[`possession_lab/appendix/8_FIRST_HALF_DIAGNOSTIC.md`](../possession_lab/appendix/8_FIRST_HALF_DIAGNOSTIC.md).
+It is not a benchmark and is not used to tune the detector.
 
 Core conclusion: the observations are useful; mapping them to confidence and
 H/A/D labels is the bottleneck. No fixed D hold duration is used.
@@ -42,9 +44,11 @@ or transition resolver.
 
 ## Appendix
 
-The [appendix/](./appendix/) folder contains the detailed visual findings appendix and supporting definitions, the
-organiser-facing evidence report, the rule-book detail, retired experiments,
-and the sample-data restart audit. It is not required for the main walkthrough.
+The [appendix/](./appendix/) folder contains the detailed visual findings
+appendix, supporting definitions, the rule-book detail, retired experiments,
+and the sample-data restart audit. The executable first-half and duplicate
+load/Viterbi notebooks were removed because the main path now contains their
+authoritative versions or their conclusions are already recorded as notes.
 
 ## Helper-first execution
 

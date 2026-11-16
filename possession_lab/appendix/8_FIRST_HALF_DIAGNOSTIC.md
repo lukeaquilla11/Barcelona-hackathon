@@ -1,10 +1,14 @@
 # First-half diagnostic
 
-The [10_first_half_results.ipynb](../../notebooks/appendix/10_first_half_results.ipynb) notebook evaluates the current candidate against `data/first_half_gt.csv`.
+An earlier executable notebook evaluated a candidate against
+`data/first_half_gt.csv`. That notebook has been removed from the presentation
+tree because the file is hand-labelled and the diagnostic used an older
+candidate. This note preserves the conclusion without presenting it as a
+reproducible benchmark.
 
 This file is an internal, hand-labelled reference. It is useful for finding recurring failure modes, but it is not authoritative ground truth and should not be used to tune every transition boundary.
 
-The current candidate scored:
+The archived low-motion candidate scored:
 
 | Metric | Value |
 |---|---:|
