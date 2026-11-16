@@ -370,6 +370,58 @@ def main() -> None:
     model.write_submission(combined_transition_output, combined_transition_labels)
     print(combined_transition_output)
 
+    # Guarded handoff diagnostics: unlike the direct confirmation ablation
+    # above, these require a later sustained anchor before accepting the
+    # candidate team.  The restart state-machine variant keeps D until a
+    # bounded active/control episode is available.  These remain diagnostics
+    # because they can abstain or delay a real switch on a short benchmark.
+    hysteretic_handoff_labels = apply_switch_confirmation_hysteresis(
+        temporal,
+        no_switch_labels,
+        minimum_score=0.65,
+        candidate_run_frames=5,
+        minimum_anchor_run_frames=8,
+        anchor_lookahead_frames=75,
+        merge_spikes=False,
+    )
+    hysteretic_handoff_output = (
+        ROOT / "evaluation" / "results"
+        / "diagnostic_no_switch_hysteretic_handoff.csv"
+    )
+    model.write_submission(hysteretic_handoff_output, hysteretic_handoff_labels)
+    print(hysteretic_handoff_output)
+
+    restart_state_labels = restart_provisional_labels(
+        temporal,
+        no_switch_labels,
+        minimum_active_run=3,
+        minimum_dead_run=5,
+        control_run=8,
+        post_restart_hold_frames=25,
+    )
+    restart_state_output = (
+        ROOT / "evaluation" / "results"
+        / "diagnostic_no_switch_restart_state_machine.csv"
+    )
+    model.write_submission(restart_state_output, restart_state_labels)
+    print(restart_state_output)
+
+    restart_handoff_labels = apply_switch_confirmation_hysteresis(
+        temporal,
+        restart_state_labels,
+        minimum_score=0.65,
+        candidate_run_frames=5,
+        minimum_anchor_run_frames=8,
+        anchor_lookahead_frames=75,
+        merge_spikes=False,
+    )
+    restart_handoff_output = (
+        ROOT / "evaluation" / "results"
+        / "diagnostic_no_switch_restart_hysteretic_handoff.csv"
+    )
+    model.write_submission(restart_handoff_output, restart_handoff_labels)
+    print(restart_handoff_output)
+
     switch_variants = {
         "baseline_switch_confirmation": {"minimum_score": 0.65, "minimum_run_frames": 5},
         "baseline_switch_confirmation_strict": {"minimum_score": 0.75, "minimum_run_frames": 5},

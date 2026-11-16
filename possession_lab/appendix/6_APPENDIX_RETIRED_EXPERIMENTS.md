@@ -23,6 +23,9 @@ These methods remain documented for reproducibility and future live-system work,
 | NO_SWITCH + true-switch confirmation | Tests post-contact motion change + team-level receiver arrival + persistence as a direct ownership rewrite | Public macro F1 **0.8866**, spell F1 **0.3184**, transition F1@25 **0.3273**; too aggressive and fragmented spells, so retain as evidence only |
 | NO_SWITCH + restart activation | Tests holding `D` until restart-compatible movement and stable team-level control | Public macro F1 **0.8234**, spell F1 **0.5600**, transition F1@25 **0.3429**; useful timing signal but not a better complete decoder |
 | NO_SWITCH + both transition signals | Tests composing the two direct rewrites | Public macro F1 **0.8183**, spell F1 **0.2880**, transition F1@25 **0.2545**; composition amplified the failure modes |
+| NO_SWITCH + hysteretic handoff | Requires a later stable anchor before accepting a switch | Exactly matched the active candidate at macro F1 **0.8917**, spell F1 **0.6207**, transition F1@25 **0.4571**; safe no-op, no gain |
+| NO_SWITCH + restart state machine | Uses bounded restart activation, provisional ownership, and sustained control | Macro F1 **0.8245**, spell F1 **0.5931**, transition F1@25 **0.3529**; better than direct restart activation but below the active candidate |
+| Restart state machine + hysteretic handoff | Combines bounded restart timing with delayed ownership handoff | Same **0.8245 / 0.5931 / 0.3529** result; no additional benefit |
 
 The active system keeps the useful parts of these ideas as evidence features, but does not let them override stronger anchors or protected `D`/`X` labels.
 

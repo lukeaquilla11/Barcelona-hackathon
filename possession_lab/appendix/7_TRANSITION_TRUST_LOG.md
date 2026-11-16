@@ -145,6 +145,22 @@ these as evidence channels that adjust interval trust, while keeping explicit
 `NO_SWITCH` and `CONTESTED` hypotheses and requiring persistence before an
 ownership change.
 
+### Guarded handoff and restart-state follow-up
+
+Two structural follow-ups were then run on top of the current `NO_SWITCH`
+candidate. A hysteretic handoff required a later stable anchor run before
+accepting a proposed switch. It produced exactly the same output as the
+active candidate: macro F1 **0.8917**, spell F1 **0.6207**, and transition
+F1@25 **0.4571**. This is a safe no-op, not an improvement.
+
+A bounded restart state machine retained `D` until restart activity and a
+sustained control run, then allowed a provisional team and later opposing
+anchor handoff. It improved the direct restart-activation ablation to macro
+F1 **0.8245**, spell F1 **0.5931**, and transition F1@25 **0.3529**, but it
+remained below the active visible-ball `NO_SWITCH` resolver. Adding the
+hysteretic handoff did not change that result. Both remain appendix
+diagnostics; the active model is unchanged.
+
 ### Structural interval-hypothesis result
 
 The next pipeline change now separates transition activity from ownership. It
