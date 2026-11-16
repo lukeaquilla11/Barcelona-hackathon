@@ -36,6 +36,9 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
 - [baseline_pipeline.py](./baseline_pipeline.py) — loading, auditing, frame time, distances, and submission writing;
 - [temporal_rules.py](./temporal_rules.py) — temporal features, pressure, reachability, anchors, receptions, and scenarios;
 - [decoder_experiments.py](./decoder_experiments.py) — confidence evidence, bounded resolvers, and decoders;
+- [calibration.py](./calibration.py) — opt-in MLE temperature scaling and Dirichlet transition-prior experiments;
+- [run_calibration_experiment.py](./run_calibration_experiment.py) — disjoint public-slice calibration/holdout diagnostics;
+- [sequence_models.py](./sequence_models.py) — anchor-initialized HMM/HSMM, Haiqal-style Bayesian-anchor HMM, and constrained sequence decoders;
 - [scenario_decoder.py](./scenario_decoder.py) — scenario-level decoding helpers;
 - [broadcast_alignment.py](./broadcast_alignment.py) — generic broadcast/tactical alignment audit;
 - [../config/possession_rules.yaml](../config/possession_rules.yaml) — configuration-backed thresholds and windows.
