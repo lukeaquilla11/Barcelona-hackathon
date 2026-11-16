@@ -66,7 +66,13 @@ trajectory:
   same_player_speed_match_max_mps: 3.0
   sharp_gap_speed_change_mps: 8.0
   tackle_opponent_distance_m: 2.5
-  nearby_gap_displacement_m: 3.0
+  kalman:
+    # Physical priors for the diagnostic ball-state smoother. These are not
+    # possession probabilities and are not fitted to the public labels.
+    measurement_noise_m: 0.35
+    acceleration_noise_mps2: 8.0
+    maximum_uncertainty_m: 8.0
+    maximum_gap_frames: 25
 
 restart:
   active_ball_speed_mps: 1.0
@@ -93,6 +99,17 @@ dead_ball_evidence:
   # per-frame and possession-spell quality.
   minimum_out_of_bounds_run_frames: 2
   out_of_bounds_boundary_tolerance: 0.0
+  # Visible-ball settling hypothesis; diagnostic until spell-level validation
+  # shows that live walking phases are not being converted to D.
+  visible_ball_activity_window_frames: 50
+  visible_ball_minimum_support_fraction: 0.80
+  visible_ball_minimum_candidate_run_frames: 20
+  visible_ball_maximum_speed_mps: 6.0
+  visible_ball_maximum_settling_speed_mps: 4.0
+  visible_ball_settling_acceleration_mps2: -4.0
+  visible_ball_maximum_restart_bridge_frames: 150
+  visible_ball_maximum_candidate_bridge_frames: 100
+  visible_ball_minimum_bridge_low_activity_fraction: 0.80
 
 transition_forecast:
   switch_risk_threshold: 0.70

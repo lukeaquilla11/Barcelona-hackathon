@@ -622,6 +622,149 @@ def _plot_anchor_margin(ax, window: pd.DataFrame) -> None:
     margin_ax.patch.set_visible(False)
 
 
+def plot_distance_speed_window(
+    features: pd.DataFrame,
+    start_frame: int,
+    end_frame: int,
+    *,
+    ax=None,
+):
+    """Plot nearest-player distance, distance margin, and closing speed."""
+    import matplotlib.pyplot as plt
+
+    window = features.loc[features["frame"].between(start_frame, end_frame)].copy()
+    if window.empty:
+        raise ValueError("distance window contains no frames")
+    if ax is None:
+        _, axes = plt.subplots(3, 1, figsize=(13, 7), sharex=True, constrained_layout=True)
+    else:
+        axes = np.asarray(ax).reshape(-1)
+        if len(axes) != 3:
+            raise ValueError("ax must contain three axes")
+    x = window["frame"].to_numpy()
+    axes[0].plot(x, pd.to_numeric(window.get("nearest_h_distance_m"), errors="coerce"), color="#d62728", label="Home distance to ball")
+    axes[0].plot(x, pd.to_numeric(window.get("nearest_a_distance_m"), errors="coerce"), color="#1f77b4", label="Away distance to ball")
+    axes[0].set_ylabel("nearest distance (m)")
+    axes[0].set_title("Distance-to-ball evidence — lower means closer")
+    axes[0].legend(loc="upper right", fontsize=8)
+    margin = pd.to_numeric(window.get("nearest_a_distance_m"), errors="coerce") - pd.to_numeric(window.get("nearest_h_distance_m"), errors="coerce")
+    axes[1].plot(x, margin, color="#6a3d9a", label="Away − Home distance")
+    axes[1].axhline(0.0, color="#777", linewidth=0.8)
+    axes[1].set_ylabel("distance margin (m)")
+    axes[1].set_title("Distance margin — positive means Home is closer")
+    axes[1].legend(loc="upper right", fontsize=8)
+    axes[2].plot(x, pd.to_numeric(window.get("nearest_h_closing_rate_mps"), errors="coerce"), color="#d62728", label="Home closing speed")
+    axes[2].plot(x, pd.to_numeric(window.get("nearest_a_closing_rate_mps"), errors="coerce"), color="#1f77b4", label="Away closing speed")
+    axes[2].axhline(0.0, color="#777", linewidth=0.8)
+    axes[2].set_ylabel("closing speed (m/s)")
+    axes[2].set_title("Effort signal — positive means distance is shrinking")
+    axes[2].legend(loc="upper right", fontsize=8)
+    _apply_frame_time_axis(
+        axes[2],
+        frame_to_match_clock=dict(zip(window["frame"].astype(int), window["match_clock_s"].astype(float)))
+        if "match_clock_s" in window else None,
+    )
+    return axes[0].figure, axes
+
+
+def plot_kick_phase_window(
+    features: pd.DataFrame,
+    start_frame: int,
+    end_frame: int,
+    *,
+    ax=None,
+):
+    """Plot kick-phase speed, acceleration, and distance travelled.
+
+    A phase begins at an observed departure/acceleration and ends at the next
+    departure or a control-deceleration anchor. It is a descriptive phase
+    segmentation, not an exact reconstructed ball path.
+    """
+    import matplotlib.pyplot as plt
+
+    window = features.loc[features["frame"].between(start_frame, end_frame)].copy()
+    if window.empty:
+        raise ValueError("kick window contains no frames")
+    if ax is None:
+        _, axes = plt.subplots(3, 1, figsize=(13, 7), sharex=True, constrained_layout=True)
+    else:
+        axes = np.asarray(ax).reshape(-1)
+        if len(axes) != 3:
+            raise ValueError("ax must contain three axes")
+    x = window["frame"].to_numpy(dtype=int)
+    speed = pd.to_numeric(window.get("ball_speed_derived_mps"), errors="coerce")
+    acceleration = pd.to_numeric(window.get("ball_acceleration_mps2"), errors="coerce")
+    distance = pd.to_numeric(window.get("ball_displacement_m"), errors="coerce").fillna(0.0)
+    departure = window.get("kick_departure_candidate", pd.Series(False, index=window.index)).fillna(False).to_numpy(bool).copy()
+    departure |= window.get("sharp_acceleration_pass_veto", pd.Series(False, index=window.index)).fillna(False).to_numpy(bool)
+    control = window.get("genuine_control_deceleration_anchor", window.get("control_deceleration_anchor", pd.Series(False, index=window.index))).fillna(False).to_numpy(bool)
+    starts = np.flatnonzero(departure)
+    ends = np.flatnonzero(control)
+    for number, phase_start in enumerate(starts):
+        later_starts = starts[starts > phase_start]
+        phase_end = int(later_starts[0] - 1) if len(later_starts) else len(x) - 1
+        controls = ends[ends >= phase_start]
+        if len(controls):
+            phase_end = min(phase_end, int(controls[0]))
+        if phase_end >= phase_start:
+            for axis in axes:
+                axis.axvspan(x[phase_start] - 0.5, x[phase_end] + 0.5, color="#66c2a5", alpha=0.12,
+                             label="kick phase" if number == 0 else "_nolegend_")
+    axes[0].plot(x, speed, color="#1f77b4", label="ball speed")
+    axes[0].set_ylabel("speed (m/s)")
+    axes[0].set_title("Kick-phase ball speed")
+    axes[1].plot(x, acceleration, color="#7b3294", label="ball acceleration")
+    axes[1].axhline(0.0, color="#777", linewidth=0.8)
+    axes[1].set_ylabel("acceleration (m/s²)")
+    axes[1].set_title("Acceleration/deceleration events")
+    phase_distance = distance.cumsum()
+    axes[2].plot(x, phase_distance.to_numpy(), color="#e66101", label="distance travelled")
+    axes[2].set_ylabel("cumulative distance (m)")
+    axes[2].set_title("Ball distance travelled in the displayed window")
+    axes[2].set_xlabel("tactical frame (match clock from first kickoff)")
+    _apply_frame_time_axis(
+        axes[2],
+        frame_to_match_clock=dict(zip(window["frame"].astype(int), window["match_clock_s"].astype(float)))
+        if "match_clock_s" in window else None,
+    )
+    for axis in axes:
+        axis.legend(loc="upper right", fontsize=8)
+        axis.grid(axis="x", alpha=0.2)
+    return axes[0].figure, axes
+
+
+def plot_state_probability_window(
+    features: pd.DataFrame,
+    start_frame: int,
+    end_frame: int,
+    *,
+    ax=None,
+):
+    """Plot the label-free evidence-normalized H/A/D vector per frame."""
+    import matplotlib.pyplot as plt
+
+    window = features.loc[features["frame"].between(start_frame, end_frame)].copy()
+    if window.empty:
+        raise ValueError("probability window contains no frames")
+    if ax is None:
+        _, ax = plt.subplots(figsize=(13, 3.2))
+    x = window["frame"].to_numpy()
+    for state, color in (("H", "#d62728"), ("A", "#1f77b4"), ("D", "#777777")):
+        column = f"state_probability_{state}"
+        if column in window:
+            ax.plot(x, window[column], color=color, linewidth=1.5, label=f"P({state} | evidence)")
+    ax.set_ylim(0.0, 1.0)
+    ax.set_ylabel("evidence share")
+    ax.set_title("Per-frame H/A/D evidence vector — not MLE-calibrated probability")
+    ax.legend(loc="upper right", fontsize=8)
+    _apply_frame_time_axis(
+        ax,
+        frame_to_match_clock=dict(zip(window["frame"].astype(int), window["match_clock_s"].astype(float)))
+        if "match_clock_s" in window else None,
+    )
+    return ax.figure, ax
+
+
 def plot_timeline_window(
     features: pd.DataFrame,
     start_frame: int,
@@ -645,19 +788,21 @@ def plot_timeline_window(
         frame_to_match_clock=dict(zip(window["frame"].astype(int), window["match_clock_s"].astype(float)))
         if "match_clock_s" in window else None,
     )
-    ax.set_yticks([0, 0.5, 1, 1.78, 2.08])
+    ax.set_yticks([0.0, 0.5, 1.0, 1.55, 1.88])
     ax.set_yticklabels(["Away", "Dead / unavailable", "Home", "Ground truth", "Prediction"])
-    ax.set_ylim(-0.5, 2.4)
+    ax.set_ylim(-0.25, 2.2)
     ax.grid(axis="x", alpha=0.2)
     x = window["frame"].to_numpy()
-    for column, y, color, label in (
-        ("closest_team", 0.82, "#555555", "nearest-team observation"),
-        ("selected_anchor_team", 1.18, "#111111", "selected anchor"),
-    ):
-        if column not in window:
-            continue
-        values = window[column].map({"A": 0, "H": 1}).to_numpy(dtype=float)
-        ax.scatter(x, values * 0.28 + y - 0.14, s=10, color=color, label=label)
+    if "closest_team" in window:
+        values = window["closest_team"].map({"A": 0.0, "H": 1.0})
+        known = values.notna().to_numpy()
+        ax.scatter(x[known], values.to_numpy(float)[known], s=11, color="#555555",
+                   label="nearest-team observation", zorder=3)
+    if "selected_anchor_team" in window:
+        values = window["selected_anchor_team"].map({"A": 0.10, "H": 1.10})
+        known = values.notna().to_numpy()
+        ax.scatter(x[known], values.to_numpy(float)[known], s=16, color="#111111",
+                   marker="o", label="selected anchor", zorder=4)
     scenario_colors = {
         "DEAD": "#e6ab02", "RESTART_LIVE_BOUNDARY": "#e6ab02",
         "BALL_IN_FLIGHT": "#66a61e", "CONTESTED": "#e7298a",
@@ -689,6 +834,15 @@ def plot_timeline_window(
             if mask.any():
                 ax.scatter(x[mask], np.full(mask.sum(), 0.50), s=16,
                            marker="s", color=color, label=f"Smart Tag: {restart}")
+    missing_ball = window.get("ball_x", pd.Series(np.nan, index=window.index)).isna() | window.get("ball_y", pd.Series(np.nan, index=window.index)).isna()
+    unavailable = ~window.get("valid", pd.Series(True, index=window.index)).fillna(False).astype(bool)
+    shaded = (missing_ball | unavailable).to_numpy(bool)
+    if shaded.any():
+        starts = np.flatnonzero(shaded & ~np.r_[False, shaded[:-1]])
+        stops = np.flatnonzero(shaded & ~np.r_[shaded[1:], False])
+        for number, (begin, stop) in enumerate(zip(starts, stops)):
+            ax.axvspan(x[begin] - 0.5, x[stop] + 0.5, color="#9e9e9e", alpha=0.12,
+                       label="ball unavailable / missing" if number == 0 else "_nolegend_", zorder=0)
     if "transition_anchor" in window:
         mask = window["transition_anchor"].fillna(False).to_numpy(bool)
         ax.scatter(x[mask], np.full(mask.sum(), 1.42), marker="v", s=55,

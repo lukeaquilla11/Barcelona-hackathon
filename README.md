@@ -27,6 +27,11 @@ The pipeline keeps evidence construction separate from decision policy:
 
 The runner is deliberately thin: it calls the reusable helpers, passes their shared evidence to one selected model policy, and returns frame-aligned labels. The notebooks are the organiser-facing explanation of the observations; helper modules contain the implementation.
 
+The current organiser-facing run is [notebooks/08_run_pipeline.ipynb](./notebooks/08_run_pipeline.ipynb).
+It executes the newer `possession_lab/run_interpolated_flight_experiment.py` runner and presents
+the `diagnostic_visible_ball_low_motion_dead_ball` candidate. The earlier registry-based notebook
+is preserved as [notebooks/08_run_pipeline_legacy.ipynb](./notebooks/08_run_pipeline_legacy.ipynb).
+
 Visual checks are also helper-first. The evidence timeline is a plotting function in
 `possession/calculations/plotting.py`, not notebook-specific labelling logic. The notebooks
 choose the frame window and provide optional public ground truth; the helper renders the same

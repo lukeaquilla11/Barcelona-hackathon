@@ -11,8 +11,15 @@ Read the notebooks in this order:
 6. [05_anchors_rulebook.ipynb](./05_anchors_rulebook.ipynb) — observable evidence for easy H/A/D anchors.
 7. [06_transition_markers.ipynb](./06_transition_markers.ipynb) — dead-ball/restart handling, transition windows, and unresolved contest evidence.
 8. [07_viterbi_model.ipynb](./07_viterbi_model.ipynb) — sequence decoding after evidence engineering.
-9. [08_run_pipeline.ipynb](./08_run_pipeline.ipynb) — reproducible pipeline execution.
+9. [08_run_pipeline.ipynb](./08_run_pipeline.ipynb) — organiser-facing execution of the best visible-ball candidate and public evaluation.
 10. [09_experimental_results.ipynb](./09_experimental_results.ipynb) — comparison of models, scenarios and rejected experiments.
+11. [10_first_half_results.ipynb](./10_first_half_results.ipynb) — noisy hand-labelled first-half diagnostic and interval error audit.
+
+The previous registry-based runner is preserved as
+[08_run_pipeline_legacy.ipynb](./08_run_pipeline_legacy.ipynb). The current 08 notebook calls
+`possession_lab/run_interpolated_flight_experiment.py` directly, so it runs the candidate that
+actually produced the best public result rather than selecting the older `possession` registry
+model.
 
 Core conclusion: the observations are useful; mapping them to confidence and
 H/A/D labels is the bottleneck. No fixed D hold duration is used.
@@ -59,6 +66,8 @@ The modelling distinction is deliberate: `H`, `A`, and `D` are the hidden posses
 ## Implementation
 
 The notebook does not duplicate the detailed theory. Reusable functions live in:
+
+- [possession_lab/](../possession_lab/) — current scenario, transition, missing-ball, and candidate runner implementation used by notebook 08;
 
 - [calculations/](../possession/calculations/) — one canonical `build_engineered_features()` composition;
 - [scenarios/](../possession/scenarios/) — public scenario, anchor, reception, and boundary API;
