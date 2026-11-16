@@ -64,6 +64,15 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
   contact plus team-arrival consensus without suppressing a whole restart interval; on the public
   slice it fell to Macro-F1 `0.8833`, so the consensus/continuity features remain evidence columns
   while this hard resolver stays in the appendix;
+- `--kinson-model /path/to/model.joblib` — optional Kinson-compatible supervised evidence
+  adapter. It attaches frame-aligned H/A/D probabilities after our observation and feature layers,
+  then tests capped transition support (`0`, `0.02`, `0.04`, `0.08`) through our interval resolver.
+  The Kinson Viterbi path is also emitted as a standalone diagnostic, never copied into the
+  promoted labels. On the available public slice, the sample-only standalone path scored Macro-F1
+  `0.6425`, Spell-F1 `0.3590`, and Transition F1@25 `0.2667`; every bounded integration was an
+  exact label/score tie with the current best (`0.8917 / 0.6207 / 0.4571`). George + Kinson also
+  tied. This is evidence that the resolver protects the pipeline from a weak auxiliary model, not
+  evidence that the sample-only classifier is ready for the private match.
 - [../config/possession_rules.yaml](../config/possession_rules.yaml) — configuration-backed thresholds and windows.
 
 The root modules remain as compatibility implementations for existing scripts.
@@ -77,3 +86,10 @@ add a scenario detector, calibrated probability model, or transition ledger.
 The adapter is therefore the maintained comparison boundary, while
 `pipeline.py` keeps its observations composable with our scenario-aware
 models without copying Haiqal's final labels.
+
+The current `origin/kinson` pointer is only the branch's initial commit; the later supervised
+modules on this branch are the useful Kinson work copied into `e1e77b2`. They require
+`scikit-learn`, `joblib`, and optional IDSSE access. The IDSSE provider was not reproducible in
+this checkout because its metadata response was empty, so the local Kinson experiment used only
+the supplied Metrica games' event-derived silver labels. Those labels are separate from the
+hackathon public ground truth and are used only to create a diagnostic auxiliary model.

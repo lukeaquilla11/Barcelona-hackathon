@@ -164,6 +164,35 @@ need external labelled matches and their Viterbi decoder uses fitted parameters.
 kept opt-in and separately ranked only after held-out validation; their outputs are not silently
 inserted as anchors or transition truth in the organiser-facing pipeline.
 
+#### Kinson probability adapter experiment
+
+The adapter now accepts an external Kinson-compatible `joblib` artifact at the runner boundary:
+
+```text
+raw tracking / optional George ball observations
+  -> our temporal, missing-ball, scenario, and anchor features
+  -> Kinson H/A/D probabilities (bounded auxiliary evidence)
+  -> our transition hypotheses and NO_SWITCH/CONTESTED interval resolver
+  -> H/A/D/X
+```
+
+It also emits the Kinson Viterbi path as a separate diagnostic, so the comparison does not confuse
+the supervised decoder with the evidence adapter. With a local model trained only on the supplied
+Metrica games and their event-derived silver labels, the standalone path scored Macro-F1 `0.6425`,
+Spell-F1 `0.3590`, and Transition F1@25 `0.2667` on the public slice. Bounded probability
+contributions of `0`, `0.02`, `0.04`, and `0.08` all produced exactly the current best labels and
+metrics: Macro-F1 `0.8917`, Spell-F1 `0.6207`, and Transition F1@25 `0.4571`. The George + Kinson
+variants also tied. The unchanged labels are expected: our resolver requires anchors and interval
+support before it accepts a handoff, so a weak or ambiguous auxiliary opinion cannot create a
+turnover. This is the safe integration result; it is not a claim that a sample-only classifier is
+validated for the private full match.
+
+The seven IDSSE matches described in Kinson's training guide could not be reproduced in this
+checkout: the installed provider returned an empty metadata document for the first requested
+match. No trained Kinson artifact or IDSSE cache is committed. A future private-data run should
+train on those matches, hold out by match, and re-run this same adapter without changing the
+resolver or using hackathon ground truth.
+
 ## Current measured reference
 
 The latest verified no-switch interval candidate reports Macro-F1 `0.8917`, mean Spell-F1 `0.6207`, and transition F1@25 `0.4571` on the available public sanity evaluation. The earlier aligned reception reference reports Macro-F1 `0.7736` and mean Spell-F1 `0.5677`. The notebook displays the current scoreboard after running, so result tables are not maintained manually here.

@@ -3,6 +3,7 @@
 import argparse
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from possession_lab.baseline_pipeline import ClosestTeamRuleModel, graded_mask
@@ -61,6 +62,8 @@ from starter.load_smart_tagging import load as load_smart_tagging
 from possession_lab.calculations.features import build_engineered_features
 from possession_lab.sequence_models import TransitionLedgerViterbi
 from possession_lab.haiqal_baseline import add_evidence_features as add_haiqal_evidence_features
+from possession_lab.supervised_bridge import add_supervised_probability_evidence
+from games import half_video_blocks
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -171,6 +174,15 @@ def main() -> None:
         "--george-allow-model-filled",
         action="store_true",
         help="also accept George's carrier-HMM 'filled' source (diagnostic only)",
+    )
+    parser.add_argument(
+        "--kinson-model",
+        type=Path,
+        default=None,
+        help=(
+            "optional Kinson-compatible joblib model; probabilities are attached as "
+            "bounded auxiliary evidence and its Viterbi labels are never copied"
+        ),
     )
     args = parser.parse_args()
     rules = load_rules()
@@ -403,6 +415,104 @@ def main() -> None:
     )
     model.write_submission(no_switch_output, no_switch_labels)
     print(no_switch_output)
+
+    # Optional Kinson integration.  The supervised classifier is kept as an
+    # independent observation expert: it sees the canonical (and, when
+    # requested, George-observed) coordinates, contributes only frame-aligned
+    # probabilities, and is passed through our interval resolver.  Its own
+    # decoded Viterbi path is intentionally not used as a label source.
+    kinson_variants: dict[str, pd.DataFrame] = {}
+    if args.kinson_model is not None:
+        if not args.kinson_model.is_file():
+            raise FileNotFoundError(f"Kinson model not found: {args.kinson_model}")
+        period = np.zeros(len(temporal), dtype=np.int32)
+        for half, first, last in half_video_blocks(model.game):
+            period[first : last + 1] = int(half)
+        atd_meta = asset_paths(
+            game=model.game,
+            data_dir=model.data_dir,
+            source="tactical",
+        )["atd_meta"]
+        team_by_slot = slot_team_map(atd_meta)
+        pitch = (
+            float(rules["pitch"]["length_m"]),
+            float(rules["pitch"]["width_m"]),
+        )
+        kinson_variants["evidence_only"] = add_supervised_probability_evidence(
+            temporal,
+            args.kinson_model,
+            team_by_slot=team_by_slot,
+            period=period,
+            pitch=pitch,
+            fps=25.0,
+            maximum_contribution=0.0,
+        )
+        prefix = (
+            "diagnostic_george_kinson"
+            if args.george_ballfill is not None
+            else "diagnostic_kinson"
+        )
+        standalone_output = (
+            ROOT / "evaluation" / "results"
+            / f"{prefix}_standalone_viterbi.csv"
+        )
+        model.write_submission(
+            standalone_output,
+            kinson_variants["evidence_only"]["supervised_decoded_label"].to_numpy("<U1"),
+        )
+        print(standalone_output)
+        for contribution in (0.02, 0.04, 0.08):
+            name = f"bounded_{int(contribution * 100):02d}"
+            kinson_variants[name] = add_supervised_probability_evidence(
+                temporal,
+                args.kinson_model,
+                team_by_slot=team_by_slot,
+                period=period,
+                pitch=pitch,
+                fps=25.0,
+                maximum_contribution=contribution,
+            )
+        print(f"Kinson probability evidence: {args.kinson_model}")
+        for variant_name, kinson_temporal in kinson_variants.items():
+            rebuilt = add_transition_hypothesis_features(kinson_temporal)
+            candidate = retain_no_switch_intervals(
+                rebuilt,
+                visible_settle_labels,
+                minimum_no_switch_probability=0.65,
+                minimum_interval_support=0.60,
+                maximum_interval_frames=300,
+                minimum_prior_team_run_frames=1,
+            )
+            output_path = (
+                ROOT / "evaluation" / "results"
+                / f"{prefix}_{variant_name}_visible_ball_no_switch_interval.csv"
+            )
+            model.write_submission(output_path, candidate)
+            print(output_path)
+
+            # One predeclared combination tests whether Kinson's probabilities
+            # add independent support to the already bounded Haiqal clues.
+            if variant_name == "bounded_04":
+                combined = add_haiqal_evidence_features(rebuilt)
+                combined = add_haiqal_transition_evidence(
+                    combined,
+                    maximum_contribution=0.04,
+                )
+                combined = add_transition_hypothesis_features(combined)
+                combined_labels = retain_no_switch_intervals(
+                    combined,
+                    visible_settle_labels,
+                    minimum_no_switch_probability=0.65,
+                    minimum_interval_support=0.60,
+                    maximum_interval_frames=300,
+                    minimum_prior_team_run_frames=1,
+                )
+                combined_path = (
+                    ROOT / "evaluation" / "results"
+                    / f"{prefix}_haiqal_bounded_04_visible_ball_no_switch_interval.csv"
+                )
+                model.write_submission(combined_path, combined_labels)
+                print(combined_path)
 
     # Local contact/arrival handoff diagnostic. It tests the measured failure
     # mode without suppressing an entire restart or possession interval: only
