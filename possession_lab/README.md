@@ -1,17 +1,21 @@
-# Possession Lab submission path
+# Possession Lab architecture and notebook path
 
-Read the notebooks in this order:
+The active implementation is the shared evidence table and runner in this folder. Read the organiser-facing notebooks in this order:
 
-1. [01_eda.ipynb](./01_eda.ipynb) — data, public five-minute scope, Smart Tagging value and limits.
-2. [02_feature_engineering.ipynb](./02_feature_engineering.ipynb) — geometry, speed, acceleration, pressure, reachability and missing-ball evidence.
-3. [03_scenario_engineering.ipynb](./03_scenario_engineering.ipynb) — dead ball, control, flight, reception, long-ball and contested scenarios.
-4. [04_anchors_rulebook.ipynb](./04_anchors_rulebook.ipynb) — observable evidence for easy H/A/D anchors.
-5. [05_transition_markers.ipynb](./05_transition_markers.ipynb) — transition windows and unresolved contest evidence.
-6. [06_viterbi_model.ipynb](./06_viterbi_model.ipynb) — sequence decoding after evidence engineering.
-7. [07_run_pipeline.ipynb](./07_run_pipeline.ipynb) — development pipeline execution and diagnostics.
-8. [08_run_pipeline.ipynb](./08_run_pipeline.ipynb) — organiser-facing run of the best visible-ball candidate and public evaluation.
-9. [08_experimental_results.ipynb](./08_experimental_results.ipynb) — comparison of models, scenarios and rejected experiments.
-10. [../notebooks/appendix/10_first_half_results.ipynb](../notebooks/appendix/10_first_half_results.ipynb) — archived noisy hand-labelled first-half diagnostic and error audit.
+0. [00_load_data.ipynb](../notebooks/00_load_data.ipynb) — load the shared match data.
+1. [01_eda.ipynb](../notebooks/01_eda.ipynb) — define the problem and inspect the public scope.
+2. [02_feature_engineering.ipynb](../notebooks/02_feature_engineering.ipynb) — construct reusable physical and missing-ball signals.
+3. [03_scenario_engineering.ipynb](../notebooks/03_scenario_engineering.ipynb) — combine observations into scenario evidence and case studies.
+4. [04_deadball_setpieces.ipynb](../notebooks/04_deadball_setpieces.ipynb) — study restart boundaries.
+5. [04b_ball_missing_player_analysis.ipynb](../notebooks/04b_ball_missing_player_analysis.ipynb) — inspect missing-ball and missing-player cases.
+6. [05_anchors_rulebook.ipynb](../notebooks/05_anchors_rulebook.ipynb) — define stable H/A/D evidence.
+7. [06_transition_markers.ipynb](../notebooks/06_transition_markers.ipynb) — resolve transition windows conservatively.
+8. [07_probability_transition_model.ipynb](../notebooks/07_probability_transition_model.ipynb) — test normalized evidence and decoder hypotheses.
+9. [08_run_pipeline.ipynb](../notebooks/08_run_pipeline.ipynb) — run the organiser-facing candidate.
+10. [08_model_evaluation.ipynb](../notebooks/08_model_evaluation.ipynb) — score and inspect disagreement intervals.
+11. [09_experimental_results.ipynb](../notebooks/09_experimental_results.ipynb) — compare final representatives.
+
+The path is deliberately **Problem → Idea → Construction → Pipeline → Evaluation**. The notebooks are clients of this package; they should not duplicate the implementation.
 
 Core conclusion: the observations are useful; mapping them to confidence and
 H/A/D labels is the bottleneck. No fixed D hold duration is used.

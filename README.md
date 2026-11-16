@@ -27,6 +27,8 @@ The pipeline keeps evidence construction separate from decision policy:
 
 The runner is deliberately thin: it calls the reusable helpers, passes their shared evidence to one selected model policy, and returns frame-aligned labels. The notebooks are the organiser-facing explanation of the observations; helper modules contain the implementation.
 
+The active implementation is organised under [`possession_lab/`](./possession_lab/): measurement and scenario evidence come first, anchors and bounded transition hypotheses resolve uncertainty, and model/evaluation runners consume that shared table. Read the notebooks as one story: **Problem → Idea → Construction → Pipeline → Evaluation**.
+
 The current organiser-facing run is [notebooks/08_run_pipeline.ipynb](./notebooks/08_run_pipeline.ipynb).
 It executes the newer `possession_lab/run_interpolated_flight_experiment.py` runner and writes
 the `diagnostic_visible_ball_low_motion_dead_ball` candidate. Public scoring and disagreement
@@ -54,11 +56,11 @@ control anchor is visible. It does not impose a fixed dead-ball duration.
 
 ```bash
 pip install -r requirements.txt
-jupyter notebook notebooks/01_load_data.ipynb
+jupyter notebook notebooks/00_load_data.ipynb
 ```
 
 - `possession/load_data.py` reads the match into numpy/pandas: ball and player positions in metres, team per track, Smart Tagging, homography and the public 5-minute ground truth. Row `i` is video frame `i`, the same as a submission row.
-- `notebooks/01_load_data.ipynb` walks through it with plots.
+- [`notebooks/00_load_data.ipynb`](./notebooks/00_load_data.ipynb) walks through it with plots.
 
 
 ## Open Bundesliga data (for training)

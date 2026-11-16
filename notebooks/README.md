@@ -1,6 +1,6 @@
-# Possession Lab submission path
+# Possession Lab notebook path
 
-Read the notebooks in this order:
+Read the notebooks in this order. The sequence follows **Problem → Idea → Construction → Pipeline → Evaluation**:
 
 0. [00_load_data.ipynb](./00_load_data.ipynb) — locate the problem-repository data directory and load the shared data objects.
 1. [01_eda.ipynb](./01_eda.ipynb) — data, public five-minute scope, Smart Tagging value and limits.
@@ -14,6 +14,14 @@ Read the notebooks in this order:
 9. [08_run_pipeline.ipynb](./08_run_pipeline.ipynb) — organiser-facing execution of the best visible-ball candidate.
 10. [08_model_evaluation.ipynb](./08_model_evaluation.ipynb) — public five-minute scoring and every disagreement-window diagnostic.
 11. [09_experimental_results.ipynb](./09_experimental_results.ipynb) — toggleable model reruns, final representatives, provided baselines, and ranked comparison.
+
+Use that same template when presenting a result:
+
+1. **Problem** — what is hard to observe or predict?
+2. **Idea** — which evidence or hypothesis should help?
+3. **Construction** — which reusable features, scenarios, anchors, or transitions encode it?
+4. **Pipeline** — how does the active `possession_lab` runner consume the shared evidence?
+5. **Evaluation** — what does the public sanity slice show, and which uncertainty remains?
 
 The previous registry-based runner is preserved as the historical
 [08_run_pipeline_legacy.ipynb](./08_run_pipeline_legacy.ipynb); it is not part of the presentation path. The current 08 notebook calls
