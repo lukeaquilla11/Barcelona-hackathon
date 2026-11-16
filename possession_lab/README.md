@@ -48,7 +48,11 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
   George's fused broadcast/tactical ball observations. It preserves the tactical ball, records
   source and uncertainty, and fills only eligible tactical gaps before feature construction;
 - [run_george_ballfill_experiment.py](./run_george_ballfill_experiment.py) — runs the current best
-  visible-ball + NO_SWITCH resolver as a separate George-observation ablation;
+  visible-ball + NO_SWITCH resolver as a separate George-observation ablation and can compare the
+  upstream motion/scenario signals against the no-George feature table;
+- [run_interpolated_flight_experiment.py](./run_interpolated_flight_experiment.py) — the canonical
+  full runner; pass `--george-ballfill /path/to/BAR-ATH_ball.csv` to place George observations at
+  the start of the same feature/scenario/anchor/transition pipeline;
 - [../config/possession_rules.yaml](../config/possession_rules.yaml) — configuration-backed thresholds and windows.
 
 The root modules remain as compatibility implementations for existing scripts.

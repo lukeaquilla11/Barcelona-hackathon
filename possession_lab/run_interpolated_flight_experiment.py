@@ -1,5 +1,6 @@
-"""Evaluate the short-occlusion ball-flight feature in isolation."""
+"""Run the full observation-first possession experiment."""
 
+import argparse
 from pathlib import Path
 
 import pandas as pd
@@ -157,9 +158,29 @@ def write_public_transition_error_audit(
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--george-ballfill",
+        type=Path,
+        default=None,
+        help="optional George fused ball CSV; fills eligible tactical gaps before features/scenarios",
+    )
+    parser.add_argument(
+        "--george-allow-model-filled",
+        action="store_true",
+        help="also accept George's carrier-HMM 'filled' source (diagnostic only)",
+    )
+    args = parser.parse_args()
     rules = load_rules()
     model = ClosestTeamRuleModel()
-    temporal = build_engineered_features(model=model, rules=rules)
+    temporal = build_engineered_features(
+        model=model,
+        rules=rules,
+        george_ballfill_path=args.george_ballfill,
+        george_allow_model_filled=args.george_allow_model_filled,
+    )
+    if args.george_ballfill is not None:
+        print(f"George ball observations: {args.george_ballfill}")
     # Optional ablation: add Haiqal's raw distance/speed/dead-ball clues as
     # observations while keeping our scenario, anchor, interval, and decoder
     # layers in control. The independent Haiqal labels are never reused.

@@ -172,6 +172,26 @@ for future scenario resolution, not an automatic H/A rule. The next principled
 use is to let a reception resolver require agreement between this audit, the
 receiver persistence features, and the later team anchor.
 
+### George fused-ball observation ablation
+
+George's branch is now integrated at the observation boundary, before temporal features and
+scenario classification. The adapter preserves the tactical ball, accepts only observed/fused
+George sources by default, records source and positional uncertainty, and fills eligible tactical
+gaps. It does not import George's carrier-HMM labels as possession labels.
+
+The paired audit found 5,810 filled tactical gaps, 5,343 changed scenario-context frames, and
+10,187 changed missing-ball-cause frames. The downstream visible-ball + `NO_SWITCH` resolver
+changed 3,576 full-timeline labels, but none of those changes fell on a public scored H/A/D frame.
+The public metrics therefore tied the reference exactly: Macro-F1 `0.8917`, Spell-F1 `0.6207`, and
+Transition F1@25 `0.4571`. This is not evidence that better ball observations are useless; it says
+that this five-minute slice contains no scored case where the new geometry supports a different
+final answer. The experiment remains useful for full-match coverage and for later uncertainty-
+weighted transition evidence.
+
+Reproduce it with `run_george_ballfill_experiment.py --compare-baseline`, or pass
+`--george-ballfill` to the canonical full runner. The feature audit is kept separate from the
+label score so an upstream signal improvement cannot be mistaken for a ground-truth gain.
+
 ### Strict same-team trajectory bridge (tested, not active)
 
 The experiment `baseline_same_team_missing_ball_trajectory.csv` implements the

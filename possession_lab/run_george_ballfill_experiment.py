@@ -34,6 +34,31 @@ from possession_lab.temporal_rules import load_rules
 ROOT = Path(__file__).resolve().parents[1]
 
 
+_NUMERIC_AUDIT_COLUMNS = (
+    "ball_x",
+    "ball_y",
+    "ball_displacement_m",
+    "ball_speed_derived_mps",
+    "ball_acceleration_mps2",
+    "ball_speed_evidence_mps",
+    "ball_kalman_speed_mps",
+    "ball_gap_implied_speed_mps",
+    "closest_distance_m",
+    "scenario_crowd_score",
+)
+
+_CATEGORICAL_AUDIT_COLUMNS = (
+    "scenario_context",
+    "scenario_context_causal",
+    "missing_ball_cause",
+    "anchor_type",
+    "reception_signal",
+    "long_ball_candidate",
+    "ball_in_flight",
+    "ball_missing_observed",
+)
+
+
 def build_current_best_labels(features: pd.DataFrame, rules: dict) -> np.ndarray:
     """Apply the current visible-ball + NO_SWITCH resolver to observations."""
     interpolated = features.copy()
@@ -89,6 +114,98 @@ def build_current_best_labels(features: pd.DataFrame, rules: dict) -> np.ndarray
     )
 
 
+def _audit_feature_changes(
+    reference: pd.DataFrame,
+    candidate: pd.DataFrame,
+    *,
+    output_path: Path,
+) -> pd.DataFrame:
+    """Summarise upstream signal changes without reading any ground truth.
+
+    This is intentionally an observation/scenario audit, not an accuracy report.  A filled ball
+    may change speed or scenario evidence while the conservative resolver quite correctly keeps
+    the final H/A/D label unchanged.  That distinction is the point of this experiment.
+    """
+    if len(reference) != len(candidate):
+        raise ValueError("reference and candidate feature tables have different lengths")
+    rows: list[dict[str, object]] = []
+    filled = candidate.get("ball_filled_from_george", pd.Series(False, index=candidate.index)).fillna(False).to_numpy(bool)
+    graded = candidate.get("graded", pd.Series(True, index=candidate.index)).fillna(False).to_numpy(bool)
+
+    for column in _NUMERIC_AUDIT_COLUMNS:
+        if column not in reference or column not in candidate:
+            continue
+        before = pd.to_numeric(reference[column], errors="coerce").to_numpy(float)
+        after = pd.to_numeric(candidate[column], errors="coerce").to_numpy(float)
+        finite_both = np.isfinite(before) & np.isfinite(after)
+        changed = finite_both & (np.abs(after - before) > 1e-9)
+        gained = ~np.isfinite(before) & np.isfinite(after)
+        rows.append(
+            {
+                "kind": "numeric",
+                "feature": column,
+                "changed_frames": int(changed.sum()),
+                "changed_graded_frames": int((changed & graded).sum()),
+                "filled_frames_changed": int((changed & filled).sum()),
+                "finite_values_gained": int(gained.sum()),
+                "mean_abs_delta_changed": float(np.mean(np.abs(after[changed] - before[changed]))) if changed.any() else 0.0,
+                "max_abs_delta_changed": float(np.max(np.abs(after[changed] - before[changed]))) if changed.any() else 0.0,
+            }
+        )
+
+    for column in _CATEGORICAL_AUDIT_COLUMNS:
+        if column not in reference or column not in candidate:
+            continue
+        before = reference[column].astype("string").fillna("<NA>").to_numpy(object)
+        after = candidate[column].astype("string").fillna("<NA>").to_numpy(object)
+        changed = before != after
+        rows.append(
+            {
+                "kind": "categorical",
+                "feature": column,
+                "changed_frames": int(changed.sum()),
+                "changed_graded_frames": int((changed & graded).sum()),
+                "filled_frames_changed": int((changed & filled).sum()),
+                "finite_values_gained": 0,
+                "mean_abs_delta_changed": np.nan,
+                "max_abs_delta_changed": np.nan,
+            }
+        )
+
+    audit = pd.DataFrame(rows)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    audit.to_csv(output_path, index=False)
+
+    summary = pd.DataFrame(
+        {
+            "metric": [
+                "n_frames",
+                "n_filled_from_george",
+                "n_filled_from_george_graded",
+                "n_scenario_context_changes",
+                "n_scenario_context_changes_graded",
+                "n_missing_ball_cause_changes",
+                "n_missing_ball_cause_changes_graded",
+            ],
+            "value": [
+                len(candidate),
+                int(filled.sum()),
+                int((filled & graded).sum()),
+                int(((reference.get("scenario_context", pd.Series(index=reference.index, dtype=object)).astype("string").fillna("<NA>").to_numpy(object))
+                     != candidate.get("scenario_context", pd.Series(index=candidate.index, dtype=object)).astype("string").fillna("<NA>").to_numpy(object)).sum()),
+                int(((reference.get("scenario_context", pd.Series(index=reference.index, dtype=object)).astype("string").fillna("<NA>").to_numpy(object))
+                     != candidate.get("scenario_context", pd.Series(index=candidate.index, dtype=object)).astype("string").fillna("<NA>").to_numpy(object))[graded].sum()),
+                int(((reference.get("missing_ball_cause", pd.Series(index=reference.index, dtype=object)).astype("string").fillna("<NA>").to_numpy(object))
+                     != candidate.get("missing_ball_cause", pd.Series(index=candidate.index, dtype=object)).astype("string").fillna("<NA>").to_numpy(object)).sum()),
+                int(((reference.get("missing_ball_cause", pd.Series(index=reference.index, dtype=object)).astype("string").fillna("<NA>").to_numpy(object))
+                     != candidate.get("missing_ball_cause", pd.Series(index=candidate.index, dtype=object)).astype("string").fillna("<NA>").to_numpy(object))[graded].sum()),
+            ],
+        }
+    )
+    summary.to_csv(output_path.with_name(output_path.stem + "_summary.csv"), index=False)
+    return audit
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--ballfill", required=True, type=Path)
@@ -102,6 +219,16 @@ def main() -> None:
         type=Path,
         default=ROOT / "evaluation/results/diagnostic_george_fused_observed_no_switch_interval.csv",
     )
+    parser.add_argument(
+        "--compare-baseline",
+        action="store_true",
+        help="also rebuild the no-George feature table and write an upstream signal/scenario audit",
+    )
+    parser.add_argument(
+        "--audit-output",
+        type=Path,
+        default=ROOT / "evaluation/reports/george_ballfill_feature_audit.csv",
+    )
     args = parser.parse_args()
 
     rules = load_rules()
@@ -114,6 +241,16 @@ def main() -> None:
     )
     labels = build_current_best_labels(features, rules)
     model.write_submission(args.output, labels)
+
+    if args.compare_baseline:
+        baseline_features = build_engineered_features(model=model, rules=rules)
+        audit = _audit_feature_changes(
+            baseline_features,
+            features,
+            output_path=args.audit_output,
+        )
+        print(args.audit_output)
+        print(audit.to_string(index=False))
 
     filled = features["ball_filled_from_george"].fillna(False).to_numpy(bool)
     audit = pd.DataFrame(
