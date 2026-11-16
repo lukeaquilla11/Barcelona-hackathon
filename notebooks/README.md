@@ -13,7 +13,7 @@ Read the notebooks in this order:
 8. [07_probability_transition_model.ipynb](./07_probability_transition_model.ipynb) — normalized observation evidence, explicit no-switch/contested transition hypotheses, interval resolution, and optional Viterbi/HSMM roles.
 9. [08_run_pipeline.ipynb](./08_run_pipeline.ipynb) — organiser-facing execution of the best visible-ball candidate.
 10. [08_model_evaluation.ipynb](./08_model_evaluation.ipynb) — public five-minute scoring and every disagreement-window diagnostic.
-11. [09_experimental_results.ipynb](./09_experimental_results.ipynb) — comparison of models, scenarios and rejected experiments.
+11. [09_experimental_results.ipynb](./09_experimental_results.ipynb) — toggleable model reruns, final representatives, provided baselines, and ranked comparison.
 
 The previous registry-based runner is preserved as the historical
 [08_run_pipeline_legacy.ipynb](./08_run_pipeline_legacy.ipynb); it is not part of the presentation path. The current 08 notebook calls
