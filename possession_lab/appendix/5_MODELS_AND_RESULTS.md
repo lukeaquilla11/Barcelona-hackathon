@@ -266,3 +266,40 @@ frames:
 
 The feature stays in the engineered table for diagnostics and future soft
 scoring. It should contribute confidence, not decide the switch alone.
+
+### Team-arrival consensus and missing-gap continuity (tested, not promoted)
+
+The next signal experiment addressed the two channels that the leave-one-out
+transition audit found most influential: ball-motion/contact and player
+arrival. The feature layer now exposes:
+
+```text
+top reachable players -> team arrival consensus
+visible endpoint motion before/after a ball gap -> trajectory continuity
+```
+
+The arrival observation is no longer only the single fastest player. It keeps
+the fastest ETA for compatibility and adds a soft consensus from the best
+three reachable players. For missing-ball intervals, a two-sided direction
+and relative-speed check records whether the visible endpoints form a
+coherent path. These values are evidence for `NO_SWITCH`, `CONTESTED`, and
+handoff hypotheses; they do not assign H/A by themselves.
+
+A local handoff guard was also tested. It examined only the first 25 frames of
+a proposed H/A boundary and required contact, team-arrival consensus, and
+receiver support before accepting the new team. This is preferable to
+suppressing a whole restart phase conceptually, but it performed worse on the
+public slice:
+
+| Candidate | Macro-F1 | Spell-F1 | Transition F1@25 | Decision |
+|---|---:|---:|---:|---|
+| Current visible-ball + `NO_SWITCH` resolver | 0.8917 | 0.6207 | 0.4571 | keep as best |
+| Local contact/arrival handoff guard | 0.8833 | 0.6207 | lower than current | reject for now |
+
+The failed guard changed 1,609 full-timeline H/A boundary frames, including
+779 H→A and 830 A→H reversions. This is evidence that the public slice does
+not support a hard contact/arrival gate: genuine handoffs are sometimes
+weakly observed or confirmed later. The new consensus and continuity columns
+remain useful diagnostics and should be used as soft interval evidence, not
+as a new hard label rule. The failed resolver is retained here so it is not
+silently mistaken for a promoted improvement.

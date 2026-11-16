@@ -718,6 +718,9 @@ def add_reachability_features(
             out[f"{team.lower()}_fastest_arrival_s"] = np.nan
             out[f"{team.lower()}_fastest_arrival_slot"] = np.nan
             out[f"{team.lower()}_fastest_closing_speed_mps"] = np.nan
+            out[f"{team.lower()}_second_arrival_s"] = np.nan
+            out[f"{team.lower()}_arrival_consensus_score"] = 0.0
+            out[f"{team.lower()}_arrival_consensus_fraction"] = 0.0
             continue
         etas = np.column_stack([result[0] for result in team_results[team]])
         closings = np.column_stack([result[1] for result in team_results[team]])
@@ -733,6 +736,26 @@ def add_reachability_features(
         out[f"{team.lower()}_fastest_arrival_s"] = best_eta
         out[f"{team.lower()}_fastest_arrival_slot"] = best_slot
         out[f"{team.lower()}_fastest_closing_speed_mps"] = best_closing
+        # A single fastest player is fragile around crossings and tracking
+        # noise. Keep that ETA for compatibility, but also expose team-level
+        # consensus from the best three reachable players. This is evidence,
+        # not a possession decision.
+        eta_scale = max(
+            float(_value(rules, "reception", "projection_horizon_seconds")),
+            1.0,
+        )
+        sorted_etas = np.sort(np.where(np.isfinite(etas), etas, np.inf), axis=1)
+        second_eta = sorted_etas[:, 1] if sorted_etas.shape[1] > 1 else sorted_etas[:, 0]
+        second_eta[~np.isfinite(second_eta)] = np.nan
+        top_k = min(3, sorted_etas.shape[1])
+        top_etas = sorted_etas[:, :top_k]
+        top_support = np.exp(-np.minimum(top_etas, 4.0 * eta_scale) / eta_scale)
+        top_support[~np.isfinite(top_etas)] = 0.0
+        out[f"{team.lower()}_second_arrival_s"] = second_eta
+        out[f"{team.lower()}_arrival_consensus_score"] = np.mean(top_support, axis=1)
+        out[f"{team.lower()}_arrival_consensus_fraction"] = np.mean(
+            top_etas <= (1.5 * eta_scale), axis=1
+        )
 
     home_eta = _numeric(out, "h_fastest_arrival_s")
     away_eta = _numeric(out, "a_fastest_arrival_s")
@@ -784,6 +807,19 @@ def add_reachability_features(
         )
     )
     out["receiver_arrival_path_agreement"] = receiver_team_agreement
+    consensus_h = _numeric(out, "h_arrival_consensus_score")
+    consensus_a = _numeric(out, "a_arrival_consensus_score")
+    consensus_margin = consensus_h - consensus_a
+    out["arrival_consensus_margin"] = consensus_margin
+    out["arrival_consensus_team"] = np.select(
+        [consensus_margin >= 0.12, consensus_margin <= -0.12],
+        ["H", "A"],
+        default=None,
+    )
+    out["arrival_consensus_agreement"] = (
+        out["arrival_consensus_team"].notna()
+        & out["arrival_consensus_team"].eq(out["likely_receiver_team"])
+    )
     out["nearest_player_receiver_disagreement"] = nearest_disagrees
     out["nearest_player_unreliable_candidate"] = (
         nearest_disagrees

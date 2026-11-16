@@ -487,6 +487,44 @@ def add_missing_ball_cause_features(features: pd.DataFrame) -> pd.DataFrame:
     expanded = {name: values.copy() for name, values in interval_signals.items()}
     starts = np.flatnonzero(missing & ~np.r_[False, missing[:-1]])
     ends = np.flatnonzero(missing & ~np.r_[missing[1:], False])
+
+    # A missing run is more informative when the two visible endpoints form
+    # a coherent path. This is an observation-quality signal only: it does
+    # not infer possession from the public labels. A coherent path supports
+    # flight/control continuity; an incoherent path remains unresolved.
+    gap_trajectory_continuity = np.zeros(n, dtype=float)
+    gap_same_team_reappearance = np.zeros(n, dtype=float)
+    gap_opponent_reappearance = np.zeros(n, dtype=float)
+    anchor_values = out.get(
+        "anchor_team", pd.Series(None, index=index, dtype=object)
+    ).to_numpy(object)
+    for start, end in zip(starts, ends):
+        before, after = start - 1, end + 1
+        if before < 1 or after + 1 >= n:
+            continue
+        left_dx = ball_x[before] - ball_x[before - 1]
+        left_dy = ball_y[before] - ball_y[before - 1]
+        right_dx = ball_x[after + 1] - ball_x[after]
+        right_dy = ball_y[after + 1] - ball_y[after]
+        left_norm = float(np.hypot(left_dx, left_dy))
+        right_norm = float(np.hypot(right_dx, right_dy))
+        finite_vectors = np.all(np.isfinite([left_dx, left_dy, right_dx, right_dy]))
+        if finite_vectors and left_norm > 1e-6 and right_norm > 1e-6:
+            cosine = float((left_dx * right_dx + left_dy * right_dy) / (left_norm * right_norm))
+            speed_ratio = min(left_norm, right_norm) / max(left_norm, right_norm)
+            continuity = np.clip(0.5 * (cosine + 1.0), 0.0, 1.0) * np.clip(speed_ratio, 0.0, 1.0)
+        else:
+            continuity = 0.0
+        if continuity <= 0.0:
+            continue
+        gap_trajectory_continuity[start : end + 1] = continuity
+        prior = anchor_values[before] if anchor_values[before] in {"H", "A"} else None
+        future = anchor_values[after] if anchor_values[after] in {"H", "A"} else None
+        if prior is not None and future is not None:
+            if prior == future:
+                gap_same_team_reappearance[start : end + 1] = continuity
+            else:
+                gap_opponent_reappearance[start : end + 1] = continuity
     for start, end in zip(starts, ends):
         before, after = start - 1, end + 1
         if before < 0 and after >= n:
@@ -504,6 +542,9 @@ def add_missing_ball_cause_features(features: pd.DataFrame) -> pd.DataFrame:
     control_score = np.clip(expanded["control"], 0.0, 1.0)
     crowd_score = np.clip(expanded["crowd"], 0.0, 1.0)
     visibility_score = np.clip(expanded["visibility"], 0.0, 1.0)
+    continuity_score = np.clip(gap_trajectory_continuity, 0.0, 1.0)
+    same_team_score = np.clip(gap_same_team_reappearance, 0.0, 1.0)
+    opponent_score = np.clip(gap_opponent_reappearance, 0.0, 1.0)
     scores = np.column_stack([
         dead_score,
         crowd_score,
@@ -539,6 +580,9 @@ def add_missing_ball_cause_features(features: pd.DataFrame) -> pd.DataFrame:
     out["missing_ball_cause_deflection_score"] = deflection_score
     out["missing_ball_cause_crowd_score"] = crowd_score
     out["missing_ball_cause_visibility_score"] = visibility_score
+    out["missing_ball_gap_trajectory_continuity_score"] = continuity_score
+    out["missing_ball_gap_same_team_reappearance_score"] = same_team_score
+    out["missing_ball_gap_opponent_reappearance_score"] = opponent_score
     out["missing_ball_cause_observation_count"] = observation_count
     return out
 
@@ -1470,6 +1514,12 @@ def add_transition_trust_features(
     arrival = numeric("arrival_time_margin_s")
     arrival_h = np.clip(np.nan_to_num(-arrival, nan=0.0) / 2.0, 0.0, 1.0)
     arrival_a = np.clip(np.nan_to_num(arrival, nan=0.0) / 2.0, 0.0, 1.0)
+    consensus_h = np.clip(numeric("h_arrival_consensus_score", 0.0), 0.0, 1.0)
+    consensus_a = np.clip(numeric("a_arrival_consensus_score", 0.0), 0.0, 1.0)
+    # Replace part of the single-player arrival evidence with team consensus;
+    # this improves the observation rather than merely increasing its weight.
+    arrival_h = 0.55 * arrival_h + 0.45 * consensus_h
+    arrival_a = 0.55 * arrival_a + 0.45 * consensus_a
 
     reception_h = numeric("reception_score_H", 0.0)
     reception_a = numeric("reception_score_A", 0.0)
@@ -1797,10 +1847,21 @@ def add_transition_hypothesis_features(
     cause_deflection = np.clip(np.nan_to_num(numeric("missing_ball_cause_deflection_score", 0.0), nan=0.0), 0.0, 1.0)
     cause_crowd = np.clip(np.nan_to_num(numeric("missing_ball_cause_crowd_score", 0.0), nan=0.0), 0.0, 1.0)
     cause_visibility = np.clip(np.nan_to_num(numeric("missing_ball_cause_visibility_score", 0.0), nan=0.0), 0.0, 1.0)
+    trajectory_continuity = np.clip(
+        np.nan_to_num(
+            numeric("missing_ball_gap_trajectory_continuity_score", 0.0),
+            nan=0.0,
+        ),
+        0.0,
+        1.0,
+    )
     # Cause-specific evidence changes the alternatives, not the owner. A
     # flight/control interpretation supports continuity; crowd/deflection
     # supports contested handling; dead/out supports the dead-ball alternative.
-    no_switch_cause_support = np.maximum(kick_no_switch_support.astype(float), np.maximum(cause_flight, cause_control))
+    no_switch_cause_support = np.maximum(
+        kick_no_switch_support.astype(float),
+        np.maximum(cause_flight, np.maximum(cause_control, 0.75 * trajectory_continuity)),
+    )
     contested_cause_support = np.maximum(cause_deflection, 0.85 * cause_crowd)
     dead_cause_support = cause_dead
     uncertainty_cause_support = np.maximum(cause_visibility, cause_crowd)
@@ -2239,6 +2300,7 @@ def transition_channel_stability(features: pd.DataFrame) -> pd.DataFrame:
             "reception_ball_deceleration_mps", "ball_direction_change_rad",
             "kick_episode_start", "kick_episode_contact_change",
             "reception_control_team_geometry", "projected_receiver_team",
+            "missing_ball_gap_trajectory_continuity_score",
         ],
         "player_arrival": [
             "nearest_h_distance_m", "nearest_a_distance_m", "closest_distance_m",
@@ -2246,12 +2308,18 @@ def transition_channel_stability(features: pd.DataFrame) -> pd.DataFrame:
             "h_fastest_closing_speed_mps", "a_fastest_closing_speed_mps",
             "arrival_time_margin_s", "h_receiver_future_near_fraction",
             "a_receiver_future_near_fraction", "likely_receiver_team",
+            "h_arrival_consensus_score", "a_arrival_consensus_score",
+            "h_arrival_consensus_fraction", "a_arrival_consensus_fraction",
+            "arrival_consensus_margin", "arrival_consensus_team",
         ],
         "missing_ball_cause": [
             "missing_ball_cause", "missing_ball_cause_dead_or_out_score",
             "missing_ball_cause_flight_score", "missing_ball_cause_control_score",
             "missing_ball_cause_deflection_score", "missing_ball_cause_crowd_score",
             "missing_ball_cause_visibility_score", "ball_missing_observed",
+            "missing_ball_gap_trajectory_continuity_score",
+            "missing_ball_gap_same_team_reappearance_score",
+            "missing_ball_gap_opponent_reappearance_score",
         ],
         "restart_context": [
             "restart_context", "smart_set_piece", "restart_ball_active",
@@ -3250,6 +3318,122 @@ def retain_no_switch_intervals(
             output[position:end] = previous
         position = end
 
+    output[~in_play] = "X"
+    return output.astype("<U1")
+
+
+def retain_weak_contact_arrival_handoffs(
+    features: pd.DataFrame,
+    base_labels: np.ndarray,
+    *,
+    boundary_frames: int = 25,
+    minimum_contact_score: float = 0.45,
+    minimum_consensus_score: float = 0.42,
+    minimum_handoff_score: float = 0.58,
+    minimum_no_switch_probability: float = 0.70,
+) -> np.ndarray:
+    """Guard only a local handoff boundary when contact/arrival disagree.
+
+    The existing interval resolver can preserve a whole proposed H/A run when
+    the evidence is ambiguous. This diagnostic is narrower: it examines only
+    the first ``boundary_frames`` of each proposed handoff and asks whether
+    ball contact, team-level arrival consensus, and receiver control agree.
+    Without that agreement, and without a new strong anchor, it retains the
+    prior team locally. It never changes D/X and never creates a new team.
+
+    The rule is a signal-based transition test, not a supervised correction.
+    """
+    output = np.asarray(base_labels, dtype="<U1").copy()
+    n_frames = len(features)
+    in_play = graded_mask(n_frames)
+    scenario = features.get(
+        "scenario_context_causal",
+        features.get("scenario_context", pd.Series("UNKNOWN", index=features.index)),
+    ).to_numpy(object)
+    live = np.isin(
+        scenario,
+        [
+            "BALL_IN_FLIGHT", "CONTESTED", "RECEPTION_CANDIDATE",
+            "MISCONTROL_CANDIDATE", "PRESSURED_CONTROL", "CONTROLLED",
+            "UNKNOWN", "TRANSITION_CANDIDATE",
+        ],
+    )
+    p_no_switch = pd.to_numeric(
+        features.get("transition_hypothesis_p_no_switch", pd.Series(1.0, index=features.index)),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    anchor_team = features.get(
+        "selected_anchor_team", features.get("anchor_team", pd.Series(None, index=features.index))
+    ).to_numpy(object)
+    anchor_confidence = pd.to_numeric(
+        features.get("selected_anchor_confidence", features.get("anchor_confidence_score", pd.Series(0.0, index=features.index))),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    candidate = features.get(
+        "transition_candidate_team",
+        features.get("reception_control_team_geometry", pd.Series(None, index=features.index)),
+    ).to_numpy(object)
+    direction = pd.to_numeric(
+        features.get("ball_direction_change_rad", pd.Series(0.0, index=features.index)),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    deceleration = pd.to_numeric(
+        features.get("reception_ball_deceleration_mps", pd.Series(0.0, index=features.index)),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    contact = np.maximum(
+        np.clip(deceleration / 4.0, 0.0, 1.0),
+        np.clip(direction / 1.2, 0.0, 1.0),
+    )
+    receiver_score = pd.to_numeric(
+        features.get("controlled_reception_signal_score", pd.Series(0.0, index=features.index)),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    consensus_h = pd.to_numeric(
+        features.get("h_arrival_consensus_score", pd.Series(0.0, index=features.index)),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    consensus_a = pd.to_numeric(
+        features.get("a_arrival_consensus_score", pd.Series(0.0, index=features.index)),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+
+    position = 1
+    while position < n_frames:
+        previous = output[position - 1]
+        current = output[position]
+        if previous not in {"H", "A"} or current not in {"H", "A"} or previous == current:
+            position += 1
+            continue
+        end = position + 1
+        while end < n_frames and output[end] == current:
+            end += 1
+        boundary_end = min(end, position + int(boundary_frames))
+        boundary = slice(position, boundary_end)
+        candidate_consensus = np.where(current == "H", consensus_h, consensus_a)
+        handoff_score = (
+            0.45 * contact
+            + 0.35 * candidate_consensus
+            + 0.20 * receiver_score
+        )
+        strong_anchor = np.any(
+            (anchor_team[boundary] == current) & (anchor_confidence[boundary] >= 0.85)
+        )
+        has_candidate = candidate[boundary] == current
+        coherent = (
+            in_play[boundary]
+            & live[boundary]
+            & (p_no_switch[boundary] >= float(minimum_no_switch_probability))
+            & has_candidate
+            & (contact[boundary] >= float(minimum_contact_score))
+            & (candidate_consensus[boundary] >= float(minimum_consensus_score))
+            & (handoff_score[boundary] >= float(minimum_handoff_score))
+        )
+        # If the new team lacks a coherent local contact+arrival handoff and
+        # no strong anchor protects it, retain only the boundary portion.
+        if not strong_anchor and not np.any(coherent):
+            output[position:boundary_end] = previous
+        position = end
     output[~in_play] = "X"
     return output.astype("<U1")
 

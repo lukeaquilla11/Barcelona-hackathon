@@ -12,6 +12,7 @@ from possession_lab.decoder_experiments import (
     dead_ball_boundary_evidence,
     low_motion_dead_ball_evidence,
     retain_no_switch_intervals,
+    retain_weak_contact_arrival_handoffs,
     restart_provisional_labels,
     scenario_gated_labels,
     bridge_same_team_missing_ball_trajectory,
@@ -402,6 +403,26 @@ def main() -> None:
     )
     model.write_submission(no_switch_output, no_switch_labels)
     print(no_switch_output)
+
+    # Local contact/arrival handoff diagnostic. It tests the measured failure
+    # mode without suppressing an entire restart or possession interval: only
+    # the transition boundary is guarded, and only when the new team lacks
+    # combined contact + team-arrival support.
+    contact_arrival_labels = retain_weak_contact_arrival_handoffs(
+        temporal,
+        no_switch_labels,
+        boundary_frames=25,
+        minimum_contact_score=0.45,
+        minimum_consensus_score=0.42,
+        minimum_handoff_score=0.58,
+        minimum_no_switch_probability=0.70,
+    )
+    contact_arrival_output = (
+        ROOT / "evaluation" / "results"
+        / "diagnostic_contact_arrival_local_boundary.csv"
+    )
+    model.write_submission(contact_arrival_output, contact_arrival_labels)
+    print(contact_arrival_output)
 
     # Conservative bootstrap guard: retain a no-switch interval only when
     # its empirical lower bound remains at least as strong as the existing

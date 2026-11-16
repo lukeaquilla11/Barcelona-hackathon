@@ -60,6 +60,10 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
   bounded Haiqal support without importing either collaborator's labels. On the public slice all
   three are exact label no-ops relative to the current best; they remain useful as full-match
   audit outputs rather than promoted score improvements;
+- `diagnostic_contact_arrival_local_boundary` — rejected local-boundary handoff guard. It tests
+  contact plus team-arrival consensus without suppressing a whole restart interval; on the public
+  slice it fell to Macro-F1 `0.8833`, so the consensus/continuity features remain evidence columns
+  while this hard resolver stays in the appendix;
 - [../config/possession_rules.yaml](../config/possession_rules.yaml) — configuration-backed thresholds and windows.
 
 The root modules remain as compatibility implementations for existing scripts.
