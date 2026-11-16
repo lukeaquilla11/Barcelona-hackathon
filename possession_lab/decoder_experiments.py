@@ -1296,6 +1296,17 @@ def add_observation_probability_features(
     missing |= ~np.isfinite(pd.to_numeric(out.get("ball_x", pd.Series(np.nan, index=out.index)), errors="coerce").to_numpy(float))
     missing |= ~np.isfinite(pd.to_numeric(out.get("ball_y", pd.Series(np.nan, index=out.index)), errors="coerce").to_numpy(float))
 
+    # Optional Haiqal integration: raw distance/speed/dead-ball clues are
+    # additional observations only.  The independent Haiqal labels are never
+    # copied into this evidence vector.  Keeping the contribution small makes
+    # this an ablation of evidence weighting, not a second hidden decoder.
+    haiqal_closeness = np.clip(numeric("haiqal_closeness_score") / 3.0, -1.0, 1.0)
+    haiqal_dead = bounded("haiqal_dead_ball_score")
+    if "haiqal_closeness_score" in out:
+        control_h = np.clip(control_h + 0.20 * np.maximum(haiqal_closeness, 0.0), 0.0, 1.0)
+        control_a = np.clip(control_a + 0.20 * np.maximum(-haiqal_closeness, 0.0), 0.0, 1.0)
+        dead = np.maximum(dead, 0.15 * haiqal_dead)
+
     # The signed margin is an additional observation channel.  It is never
     # used as a hard nearest-player ownership rule.
     margin = np.clip(numeric("team_distance_margin_m") / 4.0, -1.0, 1.0)

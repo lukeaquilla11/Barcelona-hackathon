@@ -50,6 +50,7 @@ from games import asset_paths
 from starter.load_smart_tagging import load as load_smart_tagging
 from possession_lab.calculations.features import build_engineered_features
 from possession_lab.sequence_models import TransitionLedgerViterbi
+from possession_lab.haiqal_baseline import add_evidence_features as add_haiqal_evidence_features
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -152,6 +153,10 @@ def main() -> None:
     rules = load_rules()
     model = ClosestTeamRuleModel()
     temporal = build_engineered_features(model=model, rules=rules)
+    # Optional ablation: add Haiqal's raw distance/speed/dead-ball clues as
+    # observations while keeping our scenario, anchor, interval, and decoder
+    # layers in control. The independent Haiqal labels are never reused.
+    haiqal_temporal = add_haiqal_evidence_features(temporal)
 
     interpolated = temporal.copy()
     interpolated["recent_flight_evidence"] = temporal["recent_flight_evidence_interpolated"]
@@ -841,6 +846,21 @@ def main() -> None:
     probability_ledger_output = ROOT / "evaluation" / "results" / "baseline_probability_transition_ledger_viterbi.csv"
     model.write_submission(probability_ledger_output, probability_ledger_labels)
     print(probability_ledger_output)
+
+    # Combined ablation: Haiqal contributes raw observations to our existing
+    # probability-emission/transition-ledger path. His standalone labels and
+    # Viterbi path remain excluded, so any change is attributable to the
+    # additional evidence rather than decoder replacement.
+    haiqal_probability_labels = TransitionLedgerViterbi(
+        rules,
+        use_probability_emissions=True,
+    ).fit(
+        haiqal_temporal,
+        base_labels=dead_ball_labels,
+    ).predict(haiqal_temporal)
+    haiqal_probability_output = ROOT / "evaluation" / "results" / "baseline_haiqal_evidence_probability_ledger_viterbi.csv"
+    model.write_submission(haiqal_probability_output, haiqal_probability_labels)
+    print(haiqal_probability_output)
 
     # Stage 2: conservative duration-aware decoding on top of those scores.
     hsmm_labels = duration_aware_scenario_decode(

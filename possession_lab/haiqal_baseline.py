@@ -188,6 +188,39 @@ def dead_ball_clue(F: Mapping[str, np.ndarray], params: Mapping[str, float]) -> 
     return score
 
 
+def add_evidence_features(
+    frame_table,
+    *,
+    game: str = GAME,
+    data_dir: str | os.PathLike[str] | None = None,
+):
+    """Attach Haiqal's raw clues to an existing canonical evidence table.
+
+    This is the safe integration boundary: Haiqal contributes observations,
+    while the current scenario, anchor, transition-ledger, and decoder layers
+    remain responsible for ownership.  It never copies Haiqal's final labels.
+    """
+    out = frame_table.copy()
+    raw = features(game=game, data_dir=data_dir)
+    expected = len(out)
+    if len(raw["vis"]) != expected:
+        raise ValueError(f"Haiqal evidence has {len(raw['vis'])} frames; expected {expected}")
+    prior = tag_prior(expected, game=game, data_dir=data_dir)
+    params = PARAMS
+    out["haiqal_distance_home_m"] = raw["dH"]
+    out["haiqal_distance_away_m"] = raw["dA"]
+    out["haiqal_distance_margin_m"] = raw["dA"] - raw["dH"]
+    out["haiqal_ball_speed_mps"] = raw["bspeed"]
+    out["haiqal_player_speed_mps"] = raw["pspeed"]
+    out["haiqal_visible"] = raw["vis"]
+    out["haiqal_out_of_pitch"] = raw["out"]
+    out["haiqal_closeness_score"] = closeness_clue(raw, params, prior=prior)
+    out["haiqal_dead_ball_score"] = dead_ball_clue(raw, params)
+    out["haiqal_tag_prior"] = prior
+    out["haiqal_evidence_source"] = "raw_distance_speed_deadball"
+    return out
+
+
 def frame_scores(
     F: Mapping[str, np.ndarray],
     params: Mapping[str, float] | None = None,
