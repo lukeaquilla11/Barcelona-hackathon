@@ -11,7 +11,7 @@ Read the notebooks in this order:
 7. [07_run_pipeline.ipynb](./07_run_pipeline.ipynb) — development pipeline execution and diagnostics.
 8. [08_run_pipeline.ipynb](./08_run_pipeline.ipynb) — organiser-facing run of the best visible-ball candidate and public evaluation.
 9. [08_experimental_results.ipynb](./08_experimental_results.ipynb) — comparison of models, scenarios and rejected experiments.
-10. [10_first_half_results.ipynb](./10_first_half_results.ipynb) — noisy hand-labelled first-half diagnostic and error audit.
+10. [../notebooks/appendix/10_first_half_results.ipynb](../notebooks/appendix/10_first_half_results.ipynb) — archived noisy hand-labelled first-half diagnostic and error audit.
 
 Core conclusion: the observations are useful; mapping them to confidence and
 H/A/D labels is the bottleneck. No fixed D hold duration is used.

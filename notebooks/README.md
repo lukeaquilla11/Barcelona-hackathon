@@ -10,17 +10,19 @@ Read the notebooks in this order:
 5. [04b_ball_missing_player_analysis.ipynb](./04b_ball_missing_player_analysis.ipynb) — missing-ball and missing-player observations, confidence signals, and case diagrams.
 6. [05_anchors_rulebook.ipynb](./05_anchors_rulebook.ipynb) — observable evidence for easy H/A/D anchors.
 7. [06_transition_markers.ipynb](./06_transition_markers.ipynb) — dead-ball/restart handling, transition windows, and unresolved contest evidence.
-8. [07_viterbi_model.ipynb](./07_viterbi_model.ipynb) — sequence decoding after evidence engineering.
-9. [08_run_pipeline.ipynb](./08_run_pipeline.ipynb) — organiser-facing execution of the best visible-ball candidate and public evaluation.
-10. [09_experimental_results.ipynb](./09_experimental_results.ipynb) — comparison of models, scenarios and rejected experiments.
-11. [10_first_half_results.ipynb](./10_first_half_results.ipynb) — noisy hand-labelled first-half diagnostic and interval error audit.
-12. [11_probability_transition_model.ipynb](./11_probability_transition_model.ipynb) — normalized observation evidence, explicit no-switch/contested transition hypotheses, interval resolution, and optional Viterbi/HSMM roles.
+8. [07_probability_transition_model.ipynb](./07_probability_transition_model.ipynb) — normalized observation evidence, explicit no-switch/contested transition hypotheses, interval resolution, and optional Viterbi/HSMM roles.
+9. [08_run_pipeline.ipynb](./08_run_pipeline.ipynb) — organiser-facing execution of the best visible-ball candidate.
+10. [08_model_evaluation.ipynb](./08_model_evaluation.ipynb) — public five-minute scoring and every disagreement-window diagnostic.
+11. [09_experimental_results.ipynb](./09_experimental_results.ipynb) — comparison of models, scenarios and rejected experiments.
 
-The previous registry-based runner is preserved as
-[08_run_pipeline_legacy.ipynb](./08_run_pipeline_legacy.ipynb). The current 08 notebook calls
+The previous registry-based runner is preserved as the historical
+[08_run_pipeline_legacy.ipynb](./08_run_pipeline_legacy.ipynb); it is not part of the presentation path. The current 08 notebook calls
 `possession_lab/run_interpolated_flight_experiment.py` directly, so it runs the candidate that
 actually produced the best public result rather than selecting the older `possession` registry
 model.
+
+The noisy hand-labelled first-half experiment is archived at
+[appendix/10_first_half_results.ipynb](./appendix/10_first_half_results.ipynb); it is not a benchmark.
 
 Core conclusion: the observations are useful; mapping them to confidence and
 H/A/D labels is the bottleneck. No fixed D hold duration is used.

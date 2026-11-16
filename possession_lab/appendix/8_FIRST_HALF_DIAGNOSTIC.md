@@ -1,6 +1,6 @@
 # First-half diagnostic
 
-The [10_first_half_results.ipynb](../../notebooks/10_first_half_results.ipynb) notebook evaluates the current candidate against `data/first_half_gt.csv`.
+The [10_first_half_results.ipynb](../../notebooks/appendix/10_first_half_results.ipynb) notebook evaluates the current candidate against `data/first_half_gt.csv`.
 
 This file is an internal, hand-labelled reference. It is useful for finding recurring failure modes, but it is not authoritative ground truth and should not be used to tune every transition boundary.
 
