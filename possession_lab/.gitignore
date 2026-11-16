@@ -1,0 +1,5 @@
+__pycache__/
+cache/training_idsse/
+models/*.joblib
+models/*_report.json
+reports/haiqal_param_fit.json
