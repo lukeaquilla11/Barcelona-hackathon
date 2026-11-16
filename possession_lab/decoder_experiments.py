@@ -1960,6 +1960,214 @@ def build_transition_hypothesis_ledger(features: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows).sort_values(["start_frame", "interval_id"]).reset_index(drop=True)
 
 
+def bootstrap_transition_stability(
+    features: pd.DataFrame,
+    *,
+    n_bootstrap: int = 256,
+    random_state: int = 0,
+) -> pd.DataFrame:
+    """Estimate interval-state stability by resampling observed frames.
+
+    This is a nonparametric uncertainty diagnostic. It resamples frames
+    within each already-detected transition interval and recomputes the mean
+    interval evidence for ``H``, ``A``, ``NO_SWITCH``, and ``CONTESTED``. It
+    estimates how stable the current evidence aggregation is under empirical
+    resampling; it is not a calibrated probability of the hidden possession
+    state and never reads ground truth.
+    """
+    if int(n_bootstrap) < 2:
+        raise ValueError("n_bootstrap must be at least 2")
+    required = "transition_hypothesis_interval_id"
+    if required not in features:
+        return pd.DataFrame()
+
+    interval_ids = pd.to_numeric(features[required], errors="coerce").fillna(-1).to_numpy(int)
+    valid_ids = np.unique(interval_ids[interval_ids >= 0])
+    if not len(valid_ids):
+        return pd.DataFrame()
+
+    def values(name: str, default: float = 0.0) -> np.ndarray:
+        return pd.to_numeric(
+            features.get(name, pd.Series(default, index=features.index)),
+            errors="coerce",
+        ).fillna(default).to_numpy(float)
+
+    # Do not resample the already-aggregated interval probabilities: those
+    # are constant by construction inside an interval and would produce a
+    # misleading stability of 1.0. Resample the underlying frame evidence,
+    # then reconstruct the interval logits from the same evidence channels.
+    trust_h = values("transition_trust_H")
+    trust_a = values("transition_trust_A")
+    activity = values("transition_activity_score")
+    no_switch_support = values("transition_no_switch_support")
+    dead_support = values("transition_dead_ball_cause_support")
+    contest = values("contest_score")
+    contested_support = values("transition_contested_cause_support")
+    uncertainty_support = values("transition_uncertainty_cause_support")
+    names = np.array(["H", "A", "NO_SWITCH", "CONTESTED"], dtype=object)
+    rng = np.random.default_rng(int(random_state))
+    rows: list[dict[str, object]] = []
+    for interval_id in valid_ids:
+        positions = np.flatnonzero(interval_ids == interval_id)
+        sample_positions = rng.choice(
+            positions,
+            size=(int(n_bootstrap), len(positions)),
+            replace=True,
+        )
+        mean_h = trust_h[sample_positions].mean(axis=1)
+        mean_a = trust_a[sample_positions].mean(axis=1)
+        mean_activity = activity[sample_positions].mean(axis=1)
+        mean_no_switch = no_switch_support[sample_positions].mean(axis=1)
+        mean_dead = dead_support[sample_positions].mean(axis=1)
+        mean_contest = contest[sample_positions].mean(axis=1)
+        mean_contested = contested_support[sample_positions].mean(axis=1)
+        mean_uncertainty = uncertainty_support[sample_positions].mean(axis=1)
+        ownership_margin = np.abs(mean_h - mean_a)
+        contested_strength = np.maximum.reduce([
+            mean_contest,
+            mean_activity * (1.0 - np.minimum(1.0, ownership_margin * 4.0)),
+            mean_contested,
+        ])
+        logits = np.column_stack([
+            2.0 * mean_h,
+            2.0 * mean_a,
+            2.0 * (1.0 - mean_activity) + 0.8 * mean_no_switch + 0.5 * mean_dead,
+            2.0 * contested_strength + 0.4 * mean_uncertainty,
+        ])
+        logits -= np.max(logits, axis=1, keepdims=True)
+        probabilities = np.exp(logits)
+        probabilities /= np.maximum(probabilities.sum(axis=1, keepdims=True), 1e-12)
+        winners = np.argmax(probabilities, axis=1)
+        winner_counts = np.bincount(winners, minlength=len(names))
+        winner = int(np.argmax(winner_counts))
+        no_switch_samples = probabilities[:, 2]
+        rows.append(
+            {
+                "interval_id": int(interval_id),
+                "start_frame": int(positions.min()),
+                "end_frame": int(positions.max()),
+                "frame_count": int(len(positions)),
+                "stable_state": str(names[winner]),
+                "stable_state_fraction": float(winner_counts[winner] / int(n_bootstrap)),
+                "bootstrap_H_fraction": float((winners == 0).mean()),
+                "bootstrap_A_fraction": float((winners == 1).mean()),
+                "bootstrap_no_switch_fraction": float((winners == 2).mean()),
+                "bootstrap_contested_fraction": float((winners == 3).mean()),
+                "no_switch_evidence_mean": float(no_switch_samples.mean()),
+                "no_switch_evidence_lower": float(np.percentile(no_switch_samples, 2.5)),
+                "no_switch_evidence_upper": float(np.percentile(no_switch_samples, 97.5)),
+                "bootstrap_samples": int(n_bootstrap),
+                "bootstrap_random_state": int(random_state),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def transition_channel_stability(features: pd.DataFrame) -> pd.DataFrame:
+    """Audit transition hypotheses after leaving out one evidence family.
+
+    Each ablation removes one observation family, rebuilds the transition
+    trust vector and interval hypotheses, and compares the resulting state
+    with the full evidence path. This is an empirical sensitivity measure,
+    not a learned feature weight and not a ground-truth score. Restart context
+    is included explicitly even when the current core transition hypothesis
+    does not consume it; that no-op is itself useful architectural evidence.
+    """
+    required = "transition_hypothesis_interval_id"
+    if required not in features:
+        return pd.DataFrame()
+
+    interval_ids = pd.to_numeric(features[required], errors="coerce").fillna(-1).to_numpy(int)
+    valid_ids = np.unique(interval_ids[interval_ids >= 0])
+    if not len(valid_ids):
+        return pd.DataFrame()
+    full_states = features.get(
+        "transition_hypothesis_state",
+        pd.Series("NO_SWITCH", index=features.index),
+    ).fillna("NO_SWITCH").to_numpy(object)
+
+    channel_columns = {
+        "anchors": [
+            "anchor_team", "selected_anchor_team", "anchor_confidence_score",
+            "selected_anchor_confidence", "pressure_anchor_team",
+        ],
+        "ball_motion_contact": [
+            "reception_score_H", "reception_score_A", "controlled_reception_signal_score",
+            "post_control_score_H", "post_control_score_A",
+            "directional_reception_score_H", "directional_reception_score_A",
+            "reception_ball_deceleration_mps", "ball_direction_change_rad",
+            "kick_episode_start", "kick_episode_contact_change",
+            "reception_control_team_geometry", "projected_receiver_team",
+        ],
+        "player_arrival": [
+            "nearest_h_distance_m", "nearest_a_distance_m", "closest_distance_m",
+            "nearest_h_closing_rate_mps", "nearest_a_closing_rate_mps",
+            "h_fastest_closing_speed_mps", "a_fastest_closing_speed_mps",
+            "arrival_time_margin_s", "h_receiver_future_near_fraction",
+            "a_receiver_future_near_fraction", "likely_receiver_team",
+        ],
+        "missing_ball_cause": [
+            "missing_ball_cause", "missing_ball_cause_dead_or_out_score",
+            "missing_ball_cause_flight_score", "missing_ball_cause_control_score",
+            "missing_ball_cause_deflection_score", "missing_ball_cause_crowd_score",
+            "missing_ball_cause_visibility_score", "ball_missing_observed",
+        ],
+        "restart_context": [
+            "restart_context", "smart_set_piece", "restart_ball_active",
+            "restart_live_boundary_anchor", "restart_hinted_control_anchor",
+            "restart_fallback_control_anchor", "restart_end_candidate",
+        ],
+        "haiqal": [
+            "haiqal_distance_home_m", "haiqal_distance_away_m",
+            "haiqal_distance_margin_m", "haiqal_ball_speed_mps",
+            "haiqal_player_speed_mps", "haiqal_visible", "haiqal_out_of_pitch",
+            "haiqal_closeness_score", "haiqal_dead_ball_score", "haiqal_tag_prior",
+        ],
+    }
+
+    def mode(values: np.ndarray) -> str:
+        series = pd.Series(values, dtype=object)
+        return str(series.mode().iloc[0]) if not series.empty else "NO_SWITCH"
+
+    rows: list[dict[str, object]] = []
+    for channel, columns in channel_columns.items():
+        ablated = features.copy()
+        for column in columns:
+            if column not in ablated:
+                continue
+            if pd.api.types.is_bool_dtype(ablated[column]):
+                ablated[column] = False
+            elif pd.api.types.is_numeric_dtype(ablated[column]):
+                ablated[column] = 0.0
+            else:
+                ablated[column] = None
+        rebuilt = add_transition_hypothesis_features(
+            add_transition_trust_features(ablated)
+        )
+        rebuilt_states = rebuilt["transition_hypothesis_state"].fillna("NO_SWITCH").to_numpy(object)
+        for interval_id in valid_ids:
+            positions = np.flatnonzero(interval_ids == interval_id)
+            if not len(positions):
+                continue
+            full_state = mode(full_states[positions])
+            ablated_state = mode(rebuilt_states[positions])
+            rows.append(
+                {
+                    "channel": channel,
+                    "interval_id": int(interval_id),
+                    "start_frame": int(positions.min()),
+                    "end_frame": int(positions.max()),
+                    "full_state": full_state,
+                    "ablated_state": ablated_state,
+                    "state_agrees": bool(full_state == ablated_state),
+                    "ablated_frame_state_change_fraction": float(
+                        np.mean(full_states[positions] != rebuilt_states[positions])
+                    ),
+                }
+            )
+    return pd.DataFrame(rows)
+
+
 def duration_aware_scenario_decode(
     features: pd.DataFrame,
     base_labels: np.ndarray,
@@ -2767,6 +2975,7 @@ def retain_no_switch_intervals(
     minimum_interval_support: float = 0.60,
     maximum_interval_frames: int = 300,
     minimum_prior_team_run_frames: int = 1,
+    minimum_bootstrap_no_switch_lower: float | None = None,
 ) -> np.ndarray:
     """Retain the prior team through an ambiguous live-ball interval.
 
@@ -2836,6 +3045,13 @@ def retain_no_switch_intervals(
         ),
         errors="coerce",
     ).fillna(0.0).to_numpy(float)
+    bootstrap_lower = pd.to_numeric(
+        features.get(
+            "transition_bootstrap_no_switch_lower",
+            pd.Series(np.nan, index=features.index),
+        ),
+        errors="coerce",
+    ).to_numpy(float)
 
     def prior_run_length(position: int, team: str) -> int:
         cursor = position - 1
@@ -2865,6 +3081,14 @@ def retain_no_switch_intervals(
             & (hypothesis[interval] == "NO_SWITCH")
             & (p_no_switch[interval] >= float(minimum_no_switch_probability))
         )
+        if minimum_bootstrap_no_switch_lower is not None:
+            support &= (
+                np.isfinite(bootstrap_lower[interval])
+                & (
+                    bootstrap_lower[interval]
+                    >= float(minimum_bootstrap_no_switch_lower)
+                )
+            )
         support_fraction = float(np.mean(support)) if end > position else 0.0
         strong_anchor = np.any(
             (anchor_team[interval] == current)

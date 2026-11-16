@@ -18,6 +18,8 @@ from possession_lab.decoder_experiments import (
     add_observation_probability_features,
     add_haiqal_transition_evidence,
     add_transition_hypothesis_features,
+    bootstrap_transition_stability,
+    transition_channel_stability,
     duration_aware_scenario_decode,
     add_scenario_episode_features,
     build_transition_hypothesis_ledger,
@@ -319,6 +321,46 @@ def main() -> None:
     model.write_submission(visible_settle_output, visible_settle_labels)
     print(visible_settle_output)
 
+    # Nonparametric transition-stability diagnostic. It resamples frames
+    # within each inferred interval and estimates evidence aggregation
+    # stability, not the probability that a hidden label is true.
+    bootstrap_report = bootstrap_transition_stability(
+        temporal,
+        n_bootstrap=256,
+        random_state=0,
+    )
+    bootstrap_report_output = (
+        ROOT / "evaluation" / "reports" / "transition_bootstrap_stability.csv"
+    )
+    bootstrap_report_output.parent.mkdir(parents=True, exist_ok=True)
+    bootstrap_report.to_csv(bootstrap_report_output, index=False)
+    if not bootstrap_report.empty:
+        interval_lookup = bootstrap_report.set_index("interval_id")
+        interval_ids = pd.to_numeric(
+            temporal["transition_hypothesis_interval_id"], errors="coerce"
+        ).fillna(-1).astype(int)
+        temporal["transition_bootstrap_stable_state"] = interval_ids.map(
+            interval_lookup["stable_state"]
+        ).fillna("NO_INTERVAL")
+        temporal["transition_bootstrap_stability"] = interval_ids.map(
+            interval_lookup["stable_state_fraction"]
+        ).fillna(0.0)
+        temporal["transition_bootstrap_no_switch_lower"] = interval_ids.map(
+            interval_lookup["no_switch_evidence_lower"]
+        ).fillna(0.0)
+    else:
+        temporal["transition_bootstrap_stable_state"] = "NO_INTERVAL"
+        temporal["transition_bootstrap_stability"] = 0.0
+        temporal["transition_bootstrap_no_switch_lower"] = 0.0
+    print(bootstrap_report_output)
+
+    channel_report = transition_channel_stability(temporal)
+    channel_report_output = (
+        ROOT / "evaluation" / "reports" / "transition_channel_stability.csv"
+    )
+    channel_report.to_csv(channel_report_output, index=False)
+    print(channel_report_output)
+
     # Structural transition ablation: the visible-ball candidate has strong
     # dead-ball performance, but its remaining errors are mostly H/A flips
     # inside flight, contested, reception, and unknown intervals. Retain the
@@ -338,6 +380,26 @@ def main() -> None:
     )
     model.write_submission(no_switch_output, no_switch_labels)
     print(no_switch_output)
+
+    # Conservative bootstrap guard: retain a no-switch interval only when
+    # its empirical lower bound remains at least as strong as the existing
+    # no-switch evidence gate. This is a diagnostic ablation, not a new truth
+    # source or a public-label correction.
+    bootstrap_no_switch_labels = retain_no_switch_intervals(
+        temporal,
+        visible_settle_labels,
+        minimum_no_switch_probability=0.65,
+        minimum_interval_support=0.60,
+        maximum_interval_frames=300,
+        minimum_prior_team_run_frames=1,
+        minimum_bootstrap_no_switch_lower=0.65,
+    )
+    bootstrap_no_switch_output = (
+        ROOT / "evaluation" / "results"
+        / "diagnostic_visible_ball_no_switch_bootstrap_guard.csv"
+    )
+    model.write_submission(bootstrap_no_switch_output, bootstrap_no_switch_labels)
+    print(bootstrap_no_switch_output)
 
     # Combined best-model ablation: Haiqal raw observations are allowed to
     # support a transition hypothesis, but the same visible-ball dead-ball
