@@ -1257,7 +1257,13 @@ def add_observation_probability_features(
         ).fillna(default).to_numpy(float)
 
     def boolean(name: str) -> np.ndarray:
-        return out.get(name, pd.Series(False, index=out.index)).fillna(False).to_numpy(bool)
+        # Pandas may expose a read-only NumPy view here. Several evidence
+        # channels are combined in-place below, so request an owned writable
+        # array rather than mutating a view into the DataFrame.
+        return out.get(name, pd.Series(False, index=out.index)).fillna(False).to_numpy(
+            bool,
+            copy=True,
+        )
 
     def bounded(name: str, default: float = 0.0) -> np.ndarray:
         return np.clip(numeric(name, default), 0.0, 1.0)
