@@ -34,6 +34,12 @@ anchors or interval hypotheses. With the available
 `data/ball/BAR-ATH_ball.csv`, George's observed/fused fill ablation scored
 `0.8723 / 0.6000 / 0.3889`, below the winner, so it is not enabled by default.
 
+The refreshed public disagreement audit found 804 errors on 7,500 graded frames.
+Only 20 errors (2.49%) overlap the 885 frames where the supplied tactical ball is
+missing; the remaining errors are mainly visible-ball H/A or D-boundary cases.
+That keeps George's gap reconstruction valuable for private-match robustness,
+without justifying global coordinate replacement.
+
 ## Appendix
 
 The [appendix/](./appendix/) folder contains supporting definitions, the

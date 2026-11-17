@@ -537,12 +537,12 @@ def plot_evidence_window(
     return fig, (pitch_ax, timeline_ax)
 
 
-def _plot_ground_truth_strip(ax, frames, ground_truth: pd.Series, *, y: float = 1.64):
-    """Draw contiguous public H/A/D labels as one consistent colour strip."""
+def _plot_label_strip(ax, frames, labels: pd.Series, *, y: float, prefix: str):
+    """Draw contiguous H/A/D labels as one consistent colour strip."""
     from matplotlib.patches import Rectangle
 
     frame_values = np.asarray(frames, dtype=int)
-    labels = ground_truth.reindex(frame_values).to_numpy()
+    labels = labels.reindex(frame_values).to_numpy()
     colors = {"H": "#d62728", "A": "#1f77b4", "D": "#999999"}
     if len(frame_values) == 0:
         return
@@ -566,8 +566,8 @@ def _plot_ground_truth_strip(ax, frames, ground_truth: pd.Series, *, y: float = 
                 facecolor=colors[label],
                 edgecolor="none",
                 label=(
-                    {"H": "ground truth H / Home", "A": "ground truth A / Away",
-                     "D": "ground truth D / dead / unavailable"}[label]
+                    {"H": f"{prefix} H / Home", "A": f"{prefix} A / Away",
+                     "D": f"{prefix} D / dead / unavailable"}[label]
                     if label not in labelled else "_nolegend_"
                 ),
                 alpha=0.95,
@@ -577,15 +577,21 @@ def _plot_ground_truth_strip(ax, frames, ground_truth: pd.Series, *, y: float = 
         start = i
 
 
+def _plot_ground_truth_strip(ax, frames, ground_truth: pd.Series, *, y: float = 1.64):
+    """Draw contiguous public H/A/D labels as one consistent colour strip."""
+    _plot_label_strip(ax, frames, ground_truth, y=y, prefix="ground truth")
+
+
 def plot_timeline_window(
     features: pd.DataFrame,
     start_frame: int,
     end_frame: int,
     *,
     ground_truth: pd.Series | None = None,
+    predicted_labels: pd.Series | None = None,
     ax=None,
 ):
-    """Plot only the scenario/anchor evidence timeline for a frame window."""
+    """Plot evidence plus optional public and candidate label strips."""
     import matplotlib.pyplot as plt
 
     window = features.loc[features["frame"].between(start_frame, end_frame)].copy()
@@ -642,6 +648,8 @@ def plot_timeline_window(
             ax.text(0.99, 0.04, "ground truth unavailable for this frame range",
                     transform=ax.transAxes, ha="right", color="#a33", fontsize=8,
                     bbox={"facecolor": "white", "alpha": 0.8, "edgecolor": "#999"})
+    if predicted_labels is not None:
+        _plot_label_strip(ax, window["frame"], predicted_labels, y=2.87, prefix="prediction")
     ax.legend(loc="upper left", bbox_to_anchor=(0, -0.28), ncol=3, fontsize=8)
     return ax.figure, ax
 
