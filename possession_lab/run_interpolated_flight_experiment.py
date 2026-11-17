@@ -14,6 +14,7 @@ from possession_lab.decoder_experiments import (
     low_motion_dead_ball_evidence,
     retain_no_switch_intervals,
     retain_weak_contact_arrival_handoffs,
+    apply_interaction_attempted_pass_switch,
     restart_provisional_labels,
     scenario_gated_labels,
     bridge_same_team_missing_ball_trajectory,
@@ -418,6 +419,29 @@ def main() -> None:
     )
     model.write_submission(no_switch_output, no_switch_labels)
     print(no_switch_output)
+
+    # Diagnostic interaction/attempted-pass experiment.  This restores a
+    # proposed H/A handoff suppressed by NO_SWITCH only when the candidate
+    # receiver has a multi-frame interaction episode, contact evidence, a
+    # stable post-control anchor, and (for missing-ball frames) a selected
+    # George/Kalman path.  It is deliberately a family of separate outputs;
+    # a pass attempt is not automatically a turnover.
+    interaction_prefix = "george_" if args.george_ballfill is not None else ""
+    for minimum_interaction_frames in (3, 5, 8):
+        interaction_labels = apply_interaction_attempted_pass_switch(
+            temporal,
+            no_switch_labels,
+            proposed_labels=visible_settle_labels,
+            minimum_interaction_frames=minimum_interaction_frames,
+            minimum_post_control_frames=3,
+            require_fused_path_for_missing=True,
+        )
+        interaction_output = (
+            ROOT / "evaluation" / "results"
+            / f"diagnostic_{interaction_prefix}interaction_attempted_pass_min{minimum_interaction_frames}.csv"
+        )
+        model.write_submission(interaction_output, interaction_labels)
+        print(interaction_output)
 
     # Predeclared resolver-profile sweep.  These profiles vary only the
     # interval decision policy; they do not read public labels or fit to the

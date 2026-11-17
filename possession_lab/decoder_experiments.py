@@ -3738,6 +3738,156 @@ def retain_weak_contact_arrival_handoffs(
     return output.astype("<U1")
 
 
+def apply_interaction_attempted_pass_switch(
+    features: pd.DataFrame,
+    base_labels: np.ndarray,
+    proposed_labels: np.ndarray | None = None,
+    *,
+    minimum_interaction_frames: int = 3,
+    minimum_post_control_frames: int = 3,
+    maximum_anchor_gap_frames: int = 75,
+    maximum_event_gap_frames: int = 2,
+    minimum_contact_score: float = 0.35,
+    require_fused_path_for_missing: bool = True,
+) -> np.ndarray:
+    """Promote only a persistent interaction/attempted-pass handoff.
+
+    ``base_labels`` is normally the conservative NO_SWITCH output and
+    ``proposed_labels`` is the preceding receiver-aware candidate.  A
+    proposed H/A run can be restored only when a candidate receiver from the
+    opposite prior team has a multi-frame interaction/attempted-pass episode,
+    contact evidence, and a later stable anchor.  A missing-ball episode also
+    needs a selected George/Kalman path when that path is requested.
+
+    This is deliberately an experiment: a pass attempt is not automatically a
+    turnover, and a nearby opponent is not automatically a receiver.  The
+    public labels are not read here.
+    """
+    output = np.asarray(base_labels, dtype="<U1").copy()
+    proposal = output if proposed_labels is None else np.asarray(proposed_labels, dtype="<U1")
+    if len(proposal) != len(output) or len(features) != len(output):
+        raise ValueError("features and label arrays must have the same length")
+    n_frames = len(features)
+    in_play = graded_mask(n_frames)
+
+    def boolean(name: str) -> np.ndarray:
+        return features.get(name, pd.Series(False, index=features.index)).fillna(False).to_numpy(bool)
+
+    def numeric(name: str, default: float = 0.0) -> np.ndarray:
+        return pd.to_numeric(
+            features.get(name, pd.Series(default, index=features.index)),
+            errors="coerce",
+        ).fillna(default).to_numpy(float)
+
+    scenario = features.get(
+        "scenario_context_causal",
+        features.get("scenario_context", pd.Series("UNKNOWN", index=features.index)),
+    ).fillna("UNKNOWN").to_numpy(object)
+    live = np.isin(
+        scenario,
+        [
+            "BALL_IN_FLIGHT", "CONTESTED", "RECEPTION_CANDIDATE",
+            "MISCONTROL_CANDIDATE", "PRESSURED_CONTROL", "CONTROLLED",
+            "UNKNOWN", "TRANSITION_CANDIDATE", "DEFLECTION_CANDIDATE",
+        ],
+    )
+    candidate = features.get(
+        "reception_control_team_geometry",
+        features.get("likely_receiver_team", pd.Series(None, index=features.index)),
+    ).to_numpy(object)
+    anchor = features.get(
+        "selected_anchor_team",
+        features.get("anchor_team", pd.Series(None, index=features.index)),
+    ).to_numpy(object)
+    anchor_confidence = numeric("selected_anchor_confidence", 0.0)
+    if "selected_anchor_confidence" not in features:
+        anchor_confidence = numeric("anchor_confidence_score", 0.0)
+
+    contact = np.maximum(
+        np.clip(numeric("reception_ball_deceleration_mps") / 4.0, 0.0, 1.0),
+        np.clip(numeric("ball_direction_change_rad") / 1.2, 0.0, 1.0),
+    )
+    contact = np.maximum(contact, np.clip(numeric("kick_episode_contact_change"), 0.0, 1.0))
+    interaction = (
+        boolean("soft_reception_event_candidate")
+        | boolean("short_touch_signal")
+        | boolean("opponent_reception_candidate")
+        | boolean("first_time_pass_candidate")
+        | boolean("direction_change_pass_or_deflection_candidate")
+    )
+    interaction &= np.isin(candidate, ["H", "A"])
+    interaction &= contact >= float(minimum_contact_score)
+    ball_missing = boolean("ball_missing_observed") | ~np.isfinite(numeric("ball_x", np.nan)) | ~np.isfinite(numeric("ball_y", np.nan))
+    fused_path = boolean("ball_path_fused_available")
+    fused_uncertainty = numeric("ball_path_fused_uncertainty_m", np.inf)
+    if require_fused_path_for_missing:
+        interaction &= ~ball_missing | (fused_path & np.isfinite(fused_uncertainty) & (fused_uncertainty <= 4.0))
+
+    def stable_anchor_after(start: int, team: str) -> bool:
+        end = min(n_frames, start + int(maximum_anchor_gap_frames))
+        position = start
+        while position < end:
+            if anchor[position] != team or anchor_confidence[position] < 0.85:
+                position += 1
+                continue
+            run_end = position + 1
+            while (
+                run_end < end
+                and anchor[run_end] == team
+                and anchor_confidence[run_end] >= 0.85
+            ):
+                run_end += 1
+            if run_end - position >= int(minimum_post_control_frames):
+                return True
+            position = run_end
+        return False
+
+    position = 1
+    while position < n_frames:
+        previous = proposal[position - 1]
+        current = proposal[position]
+        if (
+            previous not in {"H", "A"}
+            or current not in {"H", "A"}
+            or previous == current
+            or output[position] != previous
+        ):
+            position += 1
+            continue
+        end = position + 1
+        while end < n_frames and proposal[end] == current:
+            end += 1
+        interval = np.arange(position, end)
+        eligible = (
+            in_play[interval]
+            & live[interval]
+            & (candidate[interval] == current)
+            & interaction[interval]
+        )
+        eligible_positions = interval[eligible]
+        interaction_run = None
+        if eligible_positions.size:
+            run_start = previous_position = int(eligible_positions[0])
+            for event_position in eligible_positions[1:]:
+                event_position = int(event_position)
+                if event_position - previous_position <= int(maximum_event_gap_frames) + 1:
+                    previous_position = event_position
+                    continue
+                if previous_position - run_start + 1 >= int(minimum_interaction_frames):
+                    interaction_run = (run_start, previous_position + 1)
+                    break
+                run_start = previous_position = event_position
+            if interaction_run is None and previous_position - run_start + 1 >= int(minimum_interaction_frames):
+                interaction_run = (run_start, previous_position + 1)
+        if interaction_run is not None and stable_anchor_after(end, current):
+            switch_start, _ = interaction_run
+            writable = ~np.isin(output[switch_start:end], ["D", "X"])
+            output[switch_start:end][writable] = current
+        position = end
+    output[~in_play] = "X"
+    return output.astype("<U1")
+
+
 def apply_switch_confirmation_hysteresis(
     features: pd.DataFrame,
     base_labels: np.ndarray,

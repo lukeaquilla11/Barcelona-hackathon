@@ -604,3 +604,18 @@ information: agreement is useful, but it is not independent evidence, and
 disagreement should make the resolver more conservative rather than force a
 team switch.
 
+## Interaction/attempted-pass switch experiment
+
+The public disagreement audit also tested whether a short interaction or
+attempted pass should restore a switch suppressed by `NO_SWITCH`. The
+predeclared variants required 3, 5, or 8 interaction frames, contact/motion
+support, a later stable receiver anchor, and a selected George/Kalman path for
+missing-ball rows. All three variants made **zero additional label changes**
+relative to the George/Kalman candidate. They therefore all scored
+**0.8894 / 0.6207 / 0.4000**, below the no-George promoted reference
+**0.8917 / 0.6207 / 0.4571**. In the visible example around frames
+`11553:11623`, the model already switched to H while the public evaluation
+label remained A and the internal hypothesis was `NO_SWITCH`; counting an
+interaction as a switch would not solve that failure and could make it worse.
+The signal remains available for private-match auditing, but is not promoted.
+
