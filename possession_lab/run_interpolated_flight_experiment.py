@@ -30,6 +30,7 @@ from possession_lab.decoder_experiments import (
     add_transition_channel_profile,
     add_transition_hypothesis_features,
     resolve_three_family_transition_states,
+    resolve_hybrid_three_family_transition_states,
     bootstrap_transition_stability,
     transition_channel_stability,
     duration_aware_scenario_decode,
@@ -563,6 +564,28 @@ def main() -> None:
     three_family_output = ROOT / "evaluation" / "results" / f"{three_family_name}.csv"
     model.write_submission(three_family_output, three_family_labels)
     print(three_family_output)
+
+    # Hybrid three-family diagnostic.  The state layer can propose ENTER_D,
+    # but it is actionable only when the independent forward-settling layer
+    # finds a bounded future D run.  Restart activation or persistent control
+    # then releases the hold; CONTESTED remains an abstention.  This tests the
+    # mechanism without allowing a broad ENTER_D rewrite to become the model.
+    hybrid_labels = resolve_hybrid_three_family_transition_states(
+        temporal,
+        promoted_labels,
+        promoted_labels,
+        minimum_enter_d_support=0.75,
+        minimum_control_run_frames=3,
+        minimum_switch_confidence=0.60,
+        maximum_local_change_frames=75,
+        maximum_forward_settling_frames=75,
+    )
+    hybrid_name = "diagnostic_hybrid_three_family_transition_resolver"
+    if args.run_george_hmm_only:
+        hybrid_name = "diagnostic_george_hmm_hybrid_three_family_transition_resolver"
+    hybrid_output = ROOT / "evaluation" / "results" / f"{hybrid_name}.csv"
+    model.write_submission(hybrid_output, hybrid_labels)
+    print(hybrid_output)
 
     # Boundary diagnostic: use the same stoppage evidence for D onset, then
     # release at the first confident short-ball control anchor or restart

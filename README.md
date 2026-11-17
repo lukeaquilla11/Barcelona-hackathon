@@ -39,6 +39,14 @@ candidate asks whether a restart is actually active, and H/A→D is marked at a
 local stop boundary. The final labels are `H/A/D/X`. Read the notebooks as one
 story: **Problem → Idea → Construction → Pipeline → Evaluation**.
 
+The transition resolver is evaluated conservatively. Its three-family hybrid
+requires a dead-ball hypothesis and independent forward-settling evidence
+before opening `D`, then releases only on local restart activation or
+persistent control. It ties the public reference while making fewer
+full-match changes than the unrestricted diagnostic, so it is the safer
+full-match candidate; the public score alone cannot prove private-match
+superiority.
+
 The current organiser-facing run is [notebooks/08_run_pipeline.ipynb](./notebooks/08_run_pipeline.ipynb).
 It executes the newer `possession_lab/run_interpolated_flight_experiment.py` runner and writes
 the `diagnostic_visible_ball_no_switch_interval` candidate. Public scoring and disagreement

@@ -3506,6 +3506,164 @@ def resolve_three_family_transition_states(
     return output.astype("<U1")
 
 
+def resolve_hybrid_three_family_transition_states(
+    features: pd.DataFrame,
+    base_labels: np.ndarray,
+    settling_labels: np.ndarray,
+    *,
+    minimum_enter_d_support: float = 0.75,
+    minimum_control_run_frames: int = 3,
+    minimum_switch_confidence: float = 0.60,
+    maximum_local_change_frames: int = 75,
+    maximum_forward_settling_frames: int = 75,
+) -> np.ndarray:
+    """Resolve three transition families with a bounded dead-ball gate.
+
+    The state layer asks what transition is plausible; the forward-settling
+    layer independently asks whether the scene actually develops into a
+    stoppage.  ``ENTER_D`` is therefore actionable only when a bounded future
+    window contains a settling ``D`` run.  This prevents a plausible contact,
+    direction change, or restart cue from creating a broad dead-ball hold.
+
+    The resulting local sequence is:
+
+    ``dead-ball hypothesis + forward settling -> ENTER_D``
+    ``restart activation or persistent control -> release D``
+
+    Ambiguous ``CONTESTED`` frames remain untouched.  Existing ``X`` frames
+    are always protected.  This is still an experiment: it does not read
+    ground truth and it does not replace the promoted base candidate unless
+    its public and full-match audit justifies promotion.
+    """
+    output = np.asarray(base_labels, dtype="<U1").copy()
+    settling = np.asarray(settling_labels, dtype="<U1")
+    n = len(output)
+    if len(settling) != n:
+        raise ValueError("settling_labels must have the same length as base_labels")
+
+    states = features.get(
+        "transition_state_hypothesis",
+        pd.Series("KEEP_CURRENT", index=features.index),
+    ).fillna("KEEP_CURRENT").astype(str).to_numpy(object)
+    confidence = pd.to_numeric(
+        features.get(
+            "transition_state_hypothesis_confidence",
+            pd.Series(0.0, index=features.index),
+        ),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    enter_support = pd.to_numeric(
+        features.get(
+            "transition_state_enter_d_support",
+            pd.Series(0.0, index=features.index),
+        ),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    control_run = pd.to_numeric(
+        features.get(
+            "transition_state_control_run_frames",
+            pd.Series(0, index=features.index),
+        ),
+        errors="coerce",
+    ).fillna(0).to_numpy(int)
+    restart_activation = features.get(
+        "restart_activation", pd.Series(False, index=features.index)
+    ).fillna(False).to_numpy(bool)
+    restart_team = features.get(
+        "restart_activation_team", pd.Series(None, index=features.index, dtype=object)
+    ).to_numpy(object)
+    control_anchor = features.get(
+        "control_anchor", pd.Series(False, index=features.index)
+    ).fillna(False).to_numpy(bool)
+    control_team = features.get(
+        "control_anchor_team", pd.Series(None, index=features.index, dtype=object)
+    ).to_numpy(object)
+    graded = graded_mask(n)
+    horizon = max(1, int(maximum_forward_settling_frames))
+    local_limit = max(1, int(maximum_local_change_frames))
+    hybrid_added_d = np.zeros(n, dtype=bool)
+
+    def release_team(position: int) -> str | None:
+        for candidate in (restart_team[position], control_team[position]):
+            if candidate in {"H", "A"}:
+                return str(candidate)
+        return None
+
+    # First, apply only a bounded onset bridge.  A future settling run is
+    # required before the transition hypothesis can move the onset earlier.
+    for start in np.flatnonzero(
+        (states == "ENTER_D")
+        & (enter_support >= float(minimum_enter_d_support))
+        & graded
+    ):
+        start = int(start)
+        search_end = min(n, start + horizon)
+        settling_positions = np.flatnonzero(settling[start:search_end] == "D")
+        if settling_positions.size == 0:
+            continue
+        first_d = start + int(settling_positions[0])
+        # Only bridge to the first contiguous settling run.  Later, unrelated
+        # D runs must be supported by their own local hypothesis.
+        d_end = first_d + 1
+        while d_end < n and settling[d_end] == "D" and d_end - start < local_limit:
+            d_end += 1
+        end = min(d_end, start + local_limit)
+        for position in range(start, end):
+            if output[position] == "X":
+                continue
+            if position > start and states[position] == "CONTESTED":
+                break
+            if position > start and (
+                restart_activation[position]
+                or (
+                    control_anchor[position]
+                    and control_run[position] >= int(minimum_control_run_frames)
+                )
+            ):
+                break
+            if output[position] != "D":
+                hybrid_added_d[position] = True
+                output[position] = "D"
+
+    # Second, release only a D interval created or extended by this local
+    # policy when the release evidence identifies a team.  A restart cue
+    # without a team remains a cue, not an unsupported H/A assignment.
+    for position in range(n):
+        if not hybrid_added_d[position] or output[position] != "D" or not graded[position]:
+            continue
+        if not restart_activation[position] and not (
+            control_anchor[position]
+            and control_run[position] >= int(minimum_control_run_frames)
+        ):
+            continue
+        team = release_team(position)
+        if team is not None:
+            output[position] = team
+
+    # Finally apply the same conservative local live-play switch guard as the
+    # three-family diagnostic.  This is separate from the D gate and cannot
+    # turn an ambiguous CONTESTED state into ownership.
+    for start in np.flatnonzero(graded):
+        state = states[int(start)]
+        if not (state.startswith("SWITCH_TO_") or state.startswith("RESTART_TO_")):
+            continue
+        if confidence[int(start)] < float(minimum_switch_confidence):
+            continue
+        team = state.rsplit("_", 1)[-1]
+        if team not in {"H", "A"} or control_run[int(start)] < int(minimum_control_run_frames):
+            continue
+        end = min(n, int(start) + local_limit)
+        for position in range(int(start), end):
+            if output[position] == "X" or states[position] == "CONTESTED":
+                break
+            output[position] = team
+            if position + 1 < n and states[position + 1] == "ENTER_D":
+                break
+
+    output[~graded] = "X"
+    return output.astype("<U1")
+
+
 def build_transition_hypothesis_ledger(features: pd.DataFrame) -> pd.DataFrame:
     """Summarise transition intervals without using ground truth.
 
