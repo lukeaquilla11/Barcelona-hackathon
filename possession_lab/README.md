@@ -40,6 +40,18 @@ missing; the remaining errors are mainly visible-ball H/A or D-boundary cases.
 That keeps George's gap reconstruction valuable for private-match robustness,
 without justifying global coordinate replacement.
 
+The resolver now exposes three transition families as an auditable diagnostic:
+live `H ↔ A` handoffs, local `H/A → D` onset, and `D → H/A` restart activation
+followed by control. Its states are `KEEP_CURRENT`, `SWITCH_TO_H`,
+`SWITCH_TO_A`, `ENTER_D`, `RESTART_TO_H`, `RESTART_TO_A`, and `CONTESTED`.
+The diagnostic ties the promoted public score (`0.8947 / 0.6400 / 0.4865`) but
+changes 1,563 ungraded full-match frames, so it is not promoted. This is an
+important robustness guard: an explicit state vocabulary is useful, but the
+current dead-ball onset evidence is not yet strong enough to rewrite private
+labels wholesale. George/IDSSE contributes carrier/dead-ball posteriors and
+uncertainty; hidden direction-change support still comes from two-sided path
+geometry, Kalman/path agreement, and player arrival/pressure.
+
 ## Appendix
 
 The [appendix/](./appendix/) folder contains supporting definitions, the

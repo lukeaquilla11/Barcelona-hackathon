@@ -44,6 +44,7 @@ from possession_lab.decoder_experiments import (
     add_transition_hypothesis_features,
     add_transition_boundary_hypotheses,
     add_transition_role_evidence,
+    add_three_family_transition_state_features,
     add_transition_trust_features,
     classify_scenarios,
 )
@@ -138,6 +139,11 @@ def build_engineered_features(
     temporal = add_transition_hypothesis_features(temporal)
     temporal = add_transition_boundary_hypotheses(temporal)
     temporal = add_transition_role_evidence(temporal)
+    # Make the three transition families explicit before any label decoder:
+    # live H/A handoff, live-to-dead onset, and restart-to-team control. This
+    # is evidence only; the interval resolver remains the only layer allowed
+    # to change H/A/D/X.
+    temporal = add_three_family_transition_state_features(temporal)
     # Keep short-touch attribution as an auditable local evidence channel.
     # The canonical resolver does not consume it unless a separate experiment
     # explicitly opts in to the bounded handoff function.

@@ -3174,6 +3174,324 @@ def add_transition_role_evidence(features: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def add_three_family_transition_state_features(
+    features: pd.DataFrame,
+    *,
+    minimum_switch_margin: float = 0.12,
+    minimum_restart_support: float = 0.55,
+    minimum_dead_support: float = 0.65,
+) -> pd.DataFrame:
+    """Expose a conservative three-family transition state.
+
+    The existing evidence layer answers local questions such as whether a
+    contact, control anchor, or restart activation is present.  This function
+    gives those observations one explicit state vocabulary for the downstream
+    resolver:
+
+    ``KEEP_CURRENT``
+        No sufficiently supported boundary has been established.
+    ``SWITCH_TO_H`` / ``SWITCH_TO_A``
+        A live-play handoff has contact/receiver/control support for the
+        proposed team.  A motion change alone cannot produce this state.
+    ``ENTER_D``
+        A local live-to-dead boundary is supported.  It is emitted at the
+        onset, not for every frame of the stoppage.
+    ``RESTART_TO_H`` / ``RESTART_TO_A``
+        Restart activation and team control agree.  A long-ball launch alone
+        remains continuity evidence until landing control is observed.
+    ``CONTESTED``
+        The path or receiver evidence leaves both teams plausible.
+
+    This is deliberately a feature constructor, not a label decoder.  It
+    never reads ground truth and never turns George/Kalman path evidence into
+    an ownership decision by itself.  The path layer asks what may have
+    happened to the ball; the transition layer asks whether ownership
+    changed; the interval resolver decides when a label is allowed to move.
+    """
+    out = features.copy()
+    n = len(out)
+
+    def numeric(name: str, default: float = 0.0) -> np.ndarray:
+        return pd.to_numeric(
+            out.get(name, pd.Series(default, index=out.index)), errors="coerce"
+        ).fillna(default).to_numpy(float)
+
+    def boolean(name: str) -> np.ndarray:
+        return out.get(name, pd.Series(False, index=out.index)).fillna(False).to_numpy(bool)
+
+    def teams(name: str) -> np.ndarray:
+        values = out.get(
+            name, pd.Series(None, index=out.index, dtype=object)
+        ).to_numpy(object)
+        return np.where(np.isin(values, ["H", "A"]), values, None)
+
+    def first_valid(values: np.ndarray, position: int) -> str | None:
+        for cursor in range(position, -1, -1):
+            value = values[cursor]
+            if value in {"H", "A"}:
+                return str(value)
+        return None
+
+    p_h = np.clip(numeric("transition_hypothesis_p_H"), 0.0, 1.0)
+    p_a = np.clip(numeric("transition_hypothesis_p_A"), 0.0, 1.0)
+    p_no_switch = np.clip(numeric("transition_hypothesis_p_no_switch", 1.0), 0.0, 1.0)
+    p_contested = np.clip(numeric("transition_hypothesis_p_contested"), 0.0, 1.0)
+    contact = np.clip(numeric("contact_anchor_score"), 0.0, 1.0)
+    direction = np.maximum(
+        np.clip(numeric("ball_direction_change_rad") / 1.2, 0.0, 1.0),
+        np.clip(numeric("ball_kalman_direction_change_rad") / 1.2, 0.0, 1.0),
+    )
+    path_deflection = np.clip(
+        numeric("missing_ball_path_deflection_score"), 0.0, 1.0
+    )
+    path_uncertainty = np.clip(
+        numeric("missing_ball_path_uncertainty_m") / 10.0, 0.0, 1.0
+    )
+    player_support = np.clip(
+        np.maximum(
+            numeric("missing_ball_path_player_support_score"),
+            np.maximum(numeric("reception_score_H"), numeric("reception_score_A")),
+        ),
+        0.0,
+        1.0,
+    )
+    control_score = np.clip(
+        np.maximum(
+            numeric("controlled_reception_signal_score"),
+            np.maximum(numeric("post_control_score_H"), numeric("post_control_score_A")),
+        ),
+        0.0,
+        1.0,
+    )
+    control_anchor = boolean("control_anchor")
+    control_team = teams("control_anchor_team")
+    switch_team = teams("switch_hypothesis_team")
+    selected_team = teams("selected_anchor_team")
+    anchor_team = teams("anchor_team")
+    current_team = np.empty(n, dtype=object)
+    current_team[:] = None
+    for position in range(n):
+        current_team[position] = first_valid(anchor_team, position - 1) if position else None
+
+    dead_support = np.clip(
+        np.maximum(
+            numeric("transition_dead_ball_cause_support"),
+            np.maximum(
+                numeric("missing_ball_cause_dead_or_out_score"),
+                numeric("missing_ball_path_dead_resting_score"),
+            ),
+        ),
+        0.0,
+        1.0,
+    )
+    dead_context = (
+        boolean("ball_out_of_play_anchor")
+        | boolean("low_motion_dead_ball_anchor")
+        | boolean("dead_hold_candidate")
+        | (dead_support >= float(minimum_dead_support))
+    )
+    dead_start = dead_context & ~np.r_[False, dead_context[:-1]]
+    restart_activation = boolean("restart_activation")
+    restart_context = boolean("restart_pending") | boolean("restart_activation")
+    restart_team = teams("restart_activation_team")
+    restart_support = np.clip(
+        np.maximum(
+            restart_activation.astype(float),
+            np.maximum(
+                boolean("restart_long_ball_activation").astype(float) * 0.65,
+                np.where(control_anchor, control_score, 0.0),
+            ),
+        ),
+        0.0,
+        1.0,
+    )
+    # A control anchor must persist briefly before it can release D or confirm
+    # a landing.  This is a local temporal guard, not a global smoothing rule.
+    control_run = np.zeros(n, dtype=int)
+    for position in range(n):
+        if control_anchor[position] and control_team[position] in {"H", "A"}:
+            control_run[position] = 1
+            if position and control_team[position] == control_team[position - 1]:
+                control_run[position] += control_run[position - 1]
+
+    switch_margin = np.abs(p_h - p_a)
+    best_team = np.where(p_h >= p_a, "H", "A")
+    contact_or_path = np.maximum(contact, np.maximum(direction, path_deflection))
+    plausible_contest = (
+        (p_contested >= 0.45)
+        | (switch_margin < float(minimum_switch_margin))
+        | ((path_uncertainty >= 0.35) & (player_support >= 0.35))
+    )
+    state = np.full(n, "KEEP_CURRENT", dtype=object)
+    confidence = np.clip(np.maximum(p_h, p_a), 0.0, 1.0)
+    margin = switch_margin
+    enter_d_support = np.where(dead_start, dead_support, 0.0)
+    restart_state_support = np.zeros(n, dtype=float)
+    receiver_control_support = np.clip(
+        0.45 * player_support + 0.35 * control_score + 0.20 * contact_or_path,
+        0.0,
+        1.0,
+    )
+    direction_support = np.clip(
+        0.55 * direction + 0.45 * path_deflection,
+        0.0,
+        1.0,
+    )
+
+    for position in range(n):
+        # Live-to-dead is an onset event.  Missing ball is not enough: the
+        # dead evidence must be present, and a restart activation cannot be
+        # simultaneously interpreted as the onset.
+        if dead_start[position] and not restart_activation[position]:
+            state[position] = "ENTER_D"
+            confidence[position] = float(dead_support[position])
+            continue
+
+        candidate = control_team[position] if control_anchor[position] else switch_team[position]
+        candidate = candidate if candidate in {"H", "A"} else best_team[position]
+        is_new_team = candidate in {"H", "A"} and candidate != current_team[position]
+        has_control = (
+            control_anchor[position]
+            and control_run[position] >= 2
+            and receiver_control_support[position] >= 0.55
+        )
+
+        # Restart-to-team is downstream of activation and control.  A launch
+        # with no landing control intentionally stays KEEP_CURRENT.
+        if (
+            restart_activation[position]
+            and restart_support[position] >= float(minimum_restart_support)
+            and has_control
+            and candidate in {"H", "A"}
+        ):
+            state[position] = f"RESTART_TO_{candidate}"
+            restart_state_support[position] = float(restart_support[position])
+            confidence[position] = float(receiver_control_support[position])
+            continue
+
+        if (
+            is_new_team
+            and contact_or_path[position] >= 0.35
+            and has_control
+            and not plausible_contest[position]
+        ):
+            state[position] = f"SWITCH_TO_{candidate}"
+            confidence[position] = float(receiver_control_support[position])
+            continue
+
+        if (
+            is_new_team
+            and contact_or_path[position] >= 0.25
+            and (player_support[position] >= 0.30 or control_score[position] >= 0.35)
+            and plausible_contest[position]
+        ):
+            state[position] = "CONTESTED"
+            confidence[position] = float(max(p_contested[position], 1.0 - switch_margin[position]))
+
+    out["transition_state_hypothesis"] = state
+    out["transition_state_current_team"] = current_team
+    out["transition_state_hypothesis_confidence"] = confidence
+    out["transition_state_hypothesis_margin"] = margin
+    out["transition_state_enter_d_support"] = enter_d_support
+    out["transition_state_restart_support"] = restart_state_support
+    out["transition_state_direction_change_support"] = direction_support
+    out["transition_state_receiver_control_support"] = receiver_control_support
+    out["transition_state_dead_support"] = dead_support
+    out["transition_state_path_uncertainty"] = path_uncertainty
+    out["transition_state_control_run_frames"] = control_run
+    out["transition_state_calibrated"] = False
+    return out
+
+
+def resolve_three_family_transition_states(
+    features: pd.DataFrame,
+    base_labels: np.ndarray,
+    *,
+    minimum_enter_d_support: float = 0.75,
+    minimum_control_run_frames: int = 3,
+    minimum_switch_confidence: float = 0.60,
+    maximum_local_change_frames: int = 75,
+) -> np.ndarray:
+    """Apply the three-family state only at bounded, evidence-backed points.
+
+    This is an experiment, not the promoted decoder.  It protects hard X
+    frames, limits every edit to a local boundary, and leaves ambiguous
+    ``CONTESTED`` states unchanged.  In particular, it does not rewrite a
+    whole dead interval or convert every short touch into a switch.
+    """
+    output = np.asarray(base_labels, dtype="<U1").copy()
+    n = len(output)
+    states = features.get(
+        "transition_state_hypothesis",
+        pd.Series("KEEP_CURRENT", index=features.index),
+    ).fillna("KEEP_CURRENT").astype(str).to_numpy(object)
+    confidence = pd.to_numeric(
+        features.get(
+            "transition_state_hypothesis_confidence",
+            pd.Series(0.0, index=features.index),
+        ),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    enter_support = pd.to_numeric(
+        features.get(
+            "transition_state_enter_d_support",
+            pd.Series(0.0, index=features.index),
+        ),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    control_run = pd.to_numeric(
+        features.get(
+            "transition_state_control_run_frames",
+            pd.Series(0, index=features.index),
+        ),
+        errors="coerce",
+    ).fillna(0).to_numpy(int)
+    graded = graded_mask(n)
+
+    def local_end(start: int) -> int:
+        return min(n, start + int(maximum_local_change_frames))
+
+    # ENTER_D is applied from the local onset until the first already
+    # observed restart/control release.  Existing X is never touched.
+    for start in np.flatnonzero(
+        (states == "ENTER_D")
+        & (enter_support >= float(minimum_enter_d_support))
+        & graded
+    ):
+        start = int(start)
+        end = local_end(start)
+        for position in range(start, end):
+            if output[position] == "X":
+                continue
+            if position > start and states[position].startswith("RESTART_TO_"):
+                break
+            output[position] = "D"
+
+    # Only switch/restart when the state includes a team and the local control
+    # run has already reached the guard.  A contested hypothesis is explicit
+    # abstention, so it cannot accidentally alter the labels.
+    for start in np.flatnonzero(graded):
+        state = states[int(start)]
+        if not (state.startswith("SWITCH_TO_") or state.startswith("RESTART_TO_")):
+            continue
+        if confidence[int(start)] < float(minimum_switch_confidence):
+            continue
+        team = state.rsplit("_", 1)[-1]
+        if team not in {"H", "A"} or control_run[int(start)] < int(minimum_control_run_frames):
+            continue
+        end = local_end(int(start))
+        for position in range(int(start), end):
+            if output[position] == "X":
+                break
+            if states[position] == "CONTESTED":
+                break
+            output[position] = team
+            if position + 1 < n and states[position + 1] == "ENTER_D":
+                break
+    output[~graded] = "X"
+    return output.astype("<U1")
+
+
 def build_transition_hypothesis_ledger(features: pd.DataFrame) -> pd.DataFrame:
     """Summarise transition intervals without using ground truth.
 

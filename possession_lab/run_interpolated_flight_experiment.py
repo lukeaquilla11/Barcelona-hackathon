@@ -29,6 +29,7 @@ from possession_lab.decoder_experiments import (
     add_haiqal_transition_evidence,
     add_transition_channel_profile,
     add_transition_hypothesis_features,
+    resolve_three_family_transition_states,
     bootstrap_transition_stability,
     transition_channel_stability,
     duration_aware_scenario_decode,
@@ -517,6 +518,51 @@ def main() -> None:
         print(forward_settle_output)
         if name == "diagnostic_forward_settling_dead_ball":
             promoted_labels = forward_settle_labels
+
+    # Three-family transition-state experiment.  The feature layer has now
+    # separated the questions that are easy to conflate:
+    #   live H/A contact -> did ownership switch?
+    #   live H/A -> D -> when did play stop?
+    #   D -> restart -> which team actually controls the landing?
+    # The candidate is intentionally diagnostic.  It applies only local,
+    # evidence-backed ENTER_D or team-control boundaries and leaves
+    # CONTESTED intervals unchanged.  The promoted forward-settling output is
+    # therefore still the reference unless this candidate earns a genuine
+    # public improvement without a brittle rewrite.
+    state_report_columns = [
+        "frame", "transition_state_hypothesis", "transition_state_current_team",
+        "transition_state_hypothesis_confidence", "transition_state_hypothesis_margin",
+        "transition_state_enter_d_support", "transition_state_restart_support",
+        "transition_state_direction_change_support",
+        "transition_state_receiver_control_support", "transition_state_dead_support",
+        "transition_state_path_uncertainty", "transition_state_control_run_frames",
+        "ball_missing_observed", "missing_ball_path_hypothesis",
+        "missing_ball_path_hypothesis_confidence", "contact_anchor",
+        "control_anchor", "control_anchor_team", "restart_activation",
+        "restart_activation_team", "dead_hold_candidate", "scenario_context_causal",
+    ]
+    state_report_columns = [
+        column for column in state_report_columns if column in temporal.columns
+    ]
+    state_report = temporal.loc[:, state_report_columns].copy()
+    state_report_output = ROOT / "evaluation" / "reports" / "three_family_transition_states.csv"
+    state_report.to_csv(state_report_output, index=False)
+    print(state_report_output)
+
+    three_family_labels = resolve_three_family_transition_states(
+        temporal,
+        promoted_labels,
+        minimum_enter_d_support=0.75,
+        minimum_control_run_frames=3,
+        minimum_switch_confidence=0.60,
+        maximum_local_change_frames=75,
+    )
+    three_family_name = "diagnostic_three_family_transition_resolver"
+    if args.run_george_hmm_only:
+        three_family_name = "diagnostic_george_hmm_three_family_transition_resolver"
+    three_family_output = ROOT / "evaluation" / "results" / f"{three_family_name}.csv"
+    model.write_submission(three_family_output, three_family_labels)
+    print(three_family_output)
 
     # Boundary diagnostic: use the same stoppage evidence for D onset, then
     # release at the first confident short-ball control anchor or restart
