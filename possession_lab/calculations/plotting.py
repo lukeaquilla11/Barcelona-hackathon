@@ -17,6 +17,79 @@ PITCH_LENGTH_M = 105.3
 PITCH_WIDTH_M = 68.0
 
 
+def format_match_clock(seconds: float) -> str:
+    """Format kickoff-anchored seconds as a compact match-clock label."""
+    if not np.isfinite(seconds):
+        return "--:--"
+    sign = "-" if seconds < 0 else ""
+    total = int(round(abs(float(seconds))))
+    minutes, remainder = divmod(total, 60)
+    return f"{sign}{minutes:02d}:{remainder:02d}"
+
+
+def _configure_match_clock_axis(ax, window: pd.DataFrame) -> None:
+    """Show tactical-frame ticks with their corresponding match-clock time."""
+    from matplotlib.ticker import FuncFormatter
+
+    frames = pd.to_numeric(window["frame"], errors="coerce").to_numpy(float)
+    clock_source = window["match_clock_s"] if "match_clock_s" in window else pd.Series(np.nan, index=window.index)
+    clock = pd.to_numeric(clock_source, errors="coerce").to_numpy(float)
+    valid = np.isfinite(frames) & np.isfinite(clock)
+    if valid.sum() < 2:
+        clock = frames / 25.0
+        valid = np.isfinite(frames)
+    frame_values = frames[valid]
+    clock_values = clock[valid]
+    if len(frame_values) < 2:
+        return
+
+    def tick_label(value, _position):
+        return format_match_clock(float(np.interp(value, frame_values, clock_values)))
+
+    ax.xaxis.set_major_formatter(FuncFormatter(tick_label))
+    ax.set_xlabel("tactical frame (match clock mm:ss)")
+
+
+def _shade_boolean_runs(
+    ax,
+    x: np.ndarray,
+    mask: np.ndarray,
+    *,
+    color: str,
+    alpha: float,
+    label: str,
+    boundary_label: str,
+    boundary_color: str,
+    zorder: float = 0,
+) -> None:
+    """Shade true runs and mark their exact frame boundaries."""
+    mask = np.asarray(mask, dtype=bool)
+    if len(x) == 0 or not mask.any():
+        return
+    starts = np.flatnonzero(mask & ~np.r_[False, mask[:-1]])
+    ends = np.flatnonzero(mask & ~np.r_[mask[1:], False])
+    for index, (left, right) in enumerate(zip(starts, ends)):
+        ax.axvspan(
+            x[left] - 0.5,
+            x[right] + 0.5,
+            color=color,
+            alpha=alpha,
+            linewidth=0,
+            label=label if index == 0 else "_nolegend_",
+            zorder=zorder,
+        )
+        for boundary in (x[left] - 0.5, x[right] + 0.5):
+            ax.axvline(
+                boundary,
+                color=boundary_color,
+                linestyle=(0, (3, 2)),
+                linewidth=0.9,
+                alpha=0.85,
+                label=boundary_label if index == 0 and boundary == x[left] - 0.5 else "_nolegend_",
+                zorder=zorder + 0.1,
+            )
+
+
 def _metres(values: pd.Series, scale: float) -> pd.Series:
     """Convert normalised ATD coordinates to metres, preserving missing values."""
     numeric = pd.to_numeric(values, errors="coerce")
@@ -488,7 +561,7 @@ def plot_evidence_window(
         ax=pitch_ax,
     )
     timeline_ax.set_title("Evidence timeline — observations, not hand-written labels")
-    timeline_ax.set_xlabel("tactical frame")
+    _configure_match_clock_axis(timeline_ax, window)
     # Keep categorical markers on the same rows. Scenario and transition
     # markers are deliberately offset so they do not masquerade as labels.
     timeline_ax.set_yticks([0, 1, 2, 2.7])
@@ -522,8 +595,16 @@ def plot_evidence_window(
                             color="#d62728", label="transition anchor")
     if "ball_x" in window:
         missing = window["ball_x"].isna() | window["ball_y"].isna()
-        for row in window.loc[missing].itertuples():
-            timeline_ax.axvspan(row.frame - 0.5, row.frame + 0.5, color="#d95f02", alpha=0.08, linewidth=0)
+        _shade_boolean_runs(
+            timeline_ax,
+            x,
+            missing.to_numpy(bool),
+            color="#d95f02",
+            alpha=0.12,
+            label="ball missing (shaded)",
+            boundary_label="ball-missing boundaries",
+            boundary_color="#b24b00",
+        )
     if "graded" in window:
         unavailable = ~window["graded"].fillna(False).to_numpy(bool)
         starts = np.flatnonzero(unavailable & ~np.r_[False, unavailable[:-1]])
@@ -533,7 +614,7 @@ def plot_evidence_window(
                                 linewidth=0, label="outside graded range" if left == starts[0] else "_nolegend_")
     if ground_truth is not None:
         _plot_ground_truth_strip(timeline_ax, window["frame"], ground_truth, y=2.55)
-    timeline_ax.legend(loc="upper left", bbox_to_anchor=(0, -0.22), ncol=3, fontsize=8)
+    timeline_ax.legend(loc="upper left", bbox_to_anchor=(0, -0.25), ncol=3, fontsize=8)
     return fig, (pitch_ax, timeline_ax)
 
 
@@ -600,10 +681,10 @@ def plot_timeline_window(
     if ax is None:
         _, ax = plt.subplots(figsize=(13, 3.5))
     ax.set_title("Evidence timeline — observations, not hand-written labels")
-    ax.set_xlabel("tactical frame")
-    ax.set_yticks([0, 1, 2, 2.7])
-    ax.set_yticklabels(["Away", "Dead / unavailable", "Home", "Ground truth"])
-    ax.set_ylim(-0.5, 3.1)
+    _configure_match_clock_axis(ax, window)
+    ax.set_yticks([0, 1, 2, 2.62, 2.95])
+    ax.set_yticklabels(["Away", "Dead / unavailable", "Home", "Ground truth", "Prediction"])
+    ax.set_ylim(-0.5, 3.35)
     ax.grid(axis="x", alpha=0.2)
     x = window["frame"].to_numpy()
     for column, color, marker, label in (
@@ -632,8 +713,16 @@ def plot_timeline_window(
                    color="#d62728", label="transition anchor")
     if "ball_x" in window:
         missing = window["ball_x"].isna() | window["ball_y"].isna()
-        for row in window.loc[missing].itertuples():
-            ax.axvspan(row.frame - 0.5, row.frame + 0.5, color="#d95f02", alpha=0.08, linewidth=0)
+        _shade_boolean_runs(
+            ax,
+            x,
+            missing.to_numpy(bool),
+            color="#d95f02",
+            alpha=0.12,
+            label="ball missing (shaded)",
+            boundary_label="ball-missing boundaries",
+            boundary_color="#b24b00",
+        )
     if "graded" in window:
         unavailable = ~window["graded"].fillna(False).to_numpy(bool)
         starts = np.flatnonzero(unavailable & ~np.r_[False, unavailable[:-1]])
@@ -643,14 +732,32 @@ def plot_timeline_window(
                        linewidth=0, label="outside graded range" if left == starts[0] else "_nolegend_")
     if ground_truth is not None:
         gt = ground_truth.reindex(window["frame"]).to_numpy()
-        _plot_ground_truth_strip(ax, window["frame"], ground_truth, y=2.55)
+        _plot_ground_truth_strip(ax, window["frame"], ground_truth, y=2.62)
         if pd.Series(gt).notna().sum() == 0:
             ax.text(0.99, 0.04, "ground truth unavailable for this frame range",
                     transform=ax.transAxes, ha="right", color="#a33", fontsize=8,
                     bbox={"facecolor": "white", "alpha": 0.8, "edgecolor": "#999"})
     if predicted_labels is not None:
-        _plot_label_strip(ax, window["frame"], predicted_labels, y=2.87, prefix="prediction")
-    ax.legend(loc="upper left", bbox_to_anchor=(0, -0.28), ncol=3, fontsize=8)
+        _plot_label_strip(ax, window["frame"], predicted_labels, y=2.95, prefix="prediction")
+    if ground_truth is not None and predicted_labels is not None:
+        gt = ground_truth.reindex(window["frame"]).to_numpy()
+        pred = predicted_labels.reindex(window["frame"]).to_numpy()
+        disagreement = (
+            np.isin(gt, ["H", "A", "D"])
+            & np.isin(pred, ["H", "A", "D"])
+            & (gt != pred)
+        )
+        _shade_boolean_runs(
+            ax,
+            x,
+            disagreement,
+            color="#e31a1c",
+            alpha=0.14,
+            label="label disagreement (shaded)",
+            boundary_label="disagreement boundaries",
+            boundary_color="#b2182b",
+        )
+    ax.legend(loc="upper left", bbox_to_anchor=(0, -0.30), ncol=3, fontsize=8)
     return ax.figure, ax
 
 
@@ -678,6 +785,8 @@ def plot_transition_signals_window(
         _, axes = plt.subplots(3, 1, figsize=(13, 9), sharex=True, constrained_layout=True)
     axes = np.asarray(axes).ravel()
     x = window["frame"].to_numpy()
+    for ax in axes:
+        _configure_match_clock_axis(ax, window)
 
     def series(name: str, default=np.nan) -> np.ndarray:
         return pd.to_numeric(window.get(name, pd.Series(default, index=window.index)), errors="coerce").to_numpy(float)
@@ -695,10 +804,16 @@ def plot_transition_signals_window(
             window.get("ball_x", pd.Series(np.nan, index=window.index)).isna().to_numpy(bool)
             | window.get("ball_y", pd.Series(np.nan, index=window.index)).isna().to_numpy(bool)
         )
-        starts = np.flatnonzero(missing & ~np.r_[False, missing[:-1]])
-        ends = np.flatnonzero(missing & ~np.r_[missing[1:], False])
-        for left, right in zip(starts, ends):
-            ax.axvspan(x[left] - 0.5, x[right] + 0.5, color="#d95f02", alpha=0.08, lw=0)
+        _shade_boolean_runs(
+            ax,
+            x,
+            missing,
+            color="#d95f02",
+            alpha=0.12,
+            label="ball missing (shaded)" if ax is axes[0] else "_nolegend_",
+            boundary_label="ball-missing boundaries" if ax is axes[0] else "_nolegend_",
+            boundary_color="#b24b00",
+        )
 
     margin = series("team_distance_margin_m")
     axes[0].plot(x, margin, color="#111111", lw=1.4, label="signed distance margin (Away − Home)")
