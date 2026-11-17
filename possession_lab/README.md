@@ -97,6 +97,10 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
   `NO_SWITCH` resolver, so D can begin near the evidence boundary instead of waiting for a
   long trailing low-motion run. The 75-frame balanced profile improved all three public
   metrics; longer and stricter predeclared profiles tied the previous winner.
+- `diagnostic_anchor_terminated_forward_settling_dead_ball` — a structural diagnostic that
+  holds the proposed D interval until the first persistent short-ball control anchor or
+  restart long-ball launch. It tied the promoted public score and changed only ungraded
+  full-match frames, so it is not enabled in the winner yet.
 - `diagnostic_channel_profile_anchor_dominant`, `diagnostic_channel_profile_balanced`, and
   `diagnostic_channel_profile_independent_support` — predeclared transition-channel ablations.
   They combine anchor agreement, ball motion/contact, player arrival, restart continuity, and

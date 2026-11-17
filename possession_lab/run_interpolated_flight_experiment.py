@@ -13,6 +13,7 @@ from possession_lab.decoder_experiments import (
     classify_scenarios,
     dead_ball_boundary_evidence,
     forward_settling_dead_ball_evidence,
+    anchor_terminated_forward_settling_dead_ball_evidence,
     low_motion_dead_ball_evidence,
     retain_no_switch_intervals,
     local_touch_viterbi,
@@ -491,6 +492,33 @@ def main() -> None:
         print(forward_settle_output)
         if name == "diagnostic_forward_settling_dead_ball":
             promoted_labels = forward_settle_labels
+
+    # Boundary diagnostic: use the same stoppage evidence for D onset, then
+    # release at the first confident short-ball control anchor or restart
+    # long-ball launch. This remains separate from the promoted submission
+    # until its frame and spell behaviour is audited.
+    anchor_terminated_labels = anchor_terminated_forward_settling_dead_ball_evidence(
+        temporal,
+        no_switch_labels,
+        lookahead_frames=75,
+        maximum_current_speed_mps=10.0,
+        maximum_terminal_speed_mps=4.0,
+        minimum_speed_drop_mps=4.0,
+        minimum_activity_drop_mps=0.8,
+        minimum_receiver_separation_m=3.0,
+        minimum_candidate_run_frames=12,
+        minimum_control_run_frames=3,
+        minimum_anchor_confidence=0.85,
+        maximum_hold_frames=75,
+    )
+    anchor_terminated_output = (
+        ROOT
+        / "evaluation"
+        / "results"
+        / "diagnostic_anchor_terminated_forward_settling_dead_ball.csv"
+    )
+    model.write_submission(anchor_terminated_output, anchor_terminated_labels)
+    print(anchor_terminated_output)
 
     # Local short-touch/flight path diagnostic.  This is deliberately kept
     # separate from the promoted resolver: it compares a no-switch path, a

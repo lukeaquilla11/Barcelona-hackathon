@@ -461,6 +461,178 @@ def forward_settling_dead_ball_evidence(
     return output
 
 
+def anchor_terminated_forward_settling_dead_ball_evidence(
+    features: pd.DataFrame,
+    base_labels: np.ndarray,
+    *,
+    lookahead_frames: int = 75,
+    maximum_current_speed_mps: float = 9.0,
+    maximum_terminal_speed_mps: float = 3.0,
+    minimum_speed_drop_mps: float = 4.0,
+    minimum_activity_drop_mps: float = 0.8,
+    minimum_receiver_separation_m: float = 3.0,
+    minimum_candidate_run_frames: int = 12,
+    minimum_control_run_frames: int = 3,
+    minimum_anchor_confidence: float = 0.85,
+    maximum_hold_frames: int = 75,
+) -> np.ndarray:
+    """Hold a proposed ``D`` interval until the first confident live anchor.
+
+    This is a boundary diagnostic built on the forward-settling evidence.  It
+    does not make a direction change or a restart tag into possession.  A
+    short restart is released only after a same-team control anchor persists;
+    a restart long-ball launch may release at the initiating team's launch
+    evidence, while the landing still remains a separate control question.
+
+    The bounded hold prevents a missing control anchor from creating an
+    unbounded ``D`` spell.  ``maximum_hold_frames`` is a search bound, not a
+    fixed dead-ball duration.
+    """
+    base = np.asarray(base_labels, dtype="<U1")
+    output = base.copy()
+    n_frames = len(features)
+    in_play = graded_mask(n_frames)
+    if n_frames == 0:
+        return output
+
+    settling = forward_settling_dead_ball_evidence(
+        features,
+        base,
+        lookahead_frames=lookahead_frames,
+        maximum_current_speed_mps=maximum_current_speed_mps,
+        maximum_terminal_speed_mps=maximum_terminal_speed_mps,
+        minimum_speed_drop_mps=minimum_speed_drop_mps,
+        minimum_activity_drop_mps=minimum_activity_drop_mps,
+        minimum_receiver_separation_m=minimum_receiver_separation_m,
+        minimum_candidate_run_frames=minimum_candidate_run_frames,
+    )
+    candidate = settling == "D"
+
+    def boolean(name: str) -> np.ndarray:
+        return features.get(
+            name, pd.Series(False, index=features.index)
+        ).fillna(False).to_numpy(bool)
+
+    def numeric(name: str, default: float = 0.0) -> np.ndarray:
+        return pd.to_numeric(
+            features.get(name, pd.Series(default, index=features.index)),
+            errors="coerce",
+        ).fillna(default).to_numpy(float)
+
+    def teams(name: str) -> np.ndarray:
+        values = features.get(
+            name, pd.Series(None, index=features.index, dtype=object)
+        ).to_numpy(object)
+        return np.where(np.isin(values, ["H", "A"]), values, None)
+
+    selected_team = teams("selected_anchor_team")
+    anchor_team = teams("anchor_team")
+    control_team = teams("control_anchor_team")
+    restart_team = teams("restart_activation_team")
+    long_ball_team = teams("long_ball_initiating_team")
+    selected_confidence = numeric("selected_anchor_confidence")
+    control_confidence = numeric("control_anchor_confidence")
+    long_ball_confidence = numeric("long_ball_initiating_confidence")
+
+    # A short-ball release requires actual control evidence.  An ordinary
+    # restart activation is context plus movement, not yet a possession
+    # anchor; the control/reception signal must still agree.
+    control_signal = (
+        boolean("control_anchor")
+        & np.isin(control_team, ["H", "A"])
+        & (control_confidence >= float(minimum_anchor_confidence))
+    )
+    restart_control_signal = (
+        boolean("restart_activation")
+        & np.isin(restart_team, ["H", "A"])
+        & control_signal
+    )
+
+    # A restart long-ball launch is a valid way to leave D: it identifies the
+    # team that puts the ball back into play.  It does not settle who wins the
+    # landing, so later landing/control evidence remains available downstream.
+    long_ball_launch_signal = (
+        boolean("restart_long_ball_activation")
+        & np.isin(long_ball_team, ["H", "A"])
+        & (long_ball_confidence >= 0.50)
+    )
+
+    release_team = np.where(
+        restart_control_signal,
+        restart_team,
+        np.where(
+            control_signal,
+            control_team,
+            np.where(long_ball_launch_signal, long_ball_team, None),
+        ),
+    )
+    release_kind = np.where(
+        restart_control_signal,
+        "RESTART_CONTROL",
+        np.where(
+            control_signal,
+            "CONTROL",
+            np.where(long_ball_launch_signal, "RESTART_LONG_BALL", "NONE"),
+        ),
+    )
+
+    hold_limit = max(1, int(maximum_hold_frames))
+    minimum_control_run = max(1, int(minimum_control_run_frames))
+    position = 0
+    while position < n_frames:
+        if not candidate[position]:
+            position += 1
+            continue
+        end = position + 1
+        while end < n_frames and candidate[end]:
+            end += 1
+
+        search_end = min(n_frames, position + hold_limit + 1)
+        release = None
+        release_team_value = None
+        release_kind_value = "NONE"
+        cursor = position
+        while cursor < search_end:
+            team = release_team[cursor]
+            if team not in {"H", "A"}:
+                cursor += 1
+                continue
+            kind = release_kind[cursor]
+            if kind == "RESTART_LONG_BALL":
+                release = cursor
+                release_team_value = team
+                release_kind_value = kind
+                break
+            run_end = cursor + 1
+            while (
+                run_end < search_end
+                and release_team[run_end] == team
+                and release_kind[run_end] != "RESTART_LONG_BALL"
+            ):
+                run_end += 1
+            if run_end - cursor >= minimum_control_run:
+                release = cursor
+                release_team_value = team
+                release_kind_value = kind
+                break
+            cursor = run_end
+
+        # D begins at the first accepted stoppage candidate.  If control is
+        # found, it ends on the first strong anchor; otherwise the hold is
+        # bounded by the candidate/search window and never runs indefinitely.
+        hold_end = min(search_end, n_frames)
+        if release is not None:
+            output[position:release] = "D"
+            if release < n_frames and in_play[release]:
+                output[release] = release_team_value
+        else:
+            output[position:min(end, hold_end)] = "D"
+        position = end
+
+    output[~in_play] = "X"
+    return output.astype("<U1")
+
+
 def literal_out_of_bounds_dead_ball_evidence(
     features: pd.DataFrame,
     base_labels: np.ndarray,

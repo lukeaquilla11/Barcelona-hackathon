@@ -28,6 +28,7 @@ These methods remain documented for reproducibility and future live-system work,
 | Restart state machine + hysteretic handoff | Combines bounded restart timing with delayed ownership handoff | Same **0.8245 / 0.5931 / 0.3529** result; no additional benefit |
 | NO_SWITCH + restart phase interval resolver | Separates restart evidence from ownership and applies it as a shared interval constraint | Exact public tie with the active candidate (**0.8917 / 0.6207 / 0.4571**); changes only ungraded full-match frames, so it is a structural candidate rather than a measured score gain |
 | NO_SWITCH + local restart-boundary guards | Limits restart constraints to the first proposed handoff instead of the whole restart phase | 5/12/25-frame guards produced **0.8917 / 0.6207 / 0.4571**, **0.8917 / 0.6207 / 0.4000**, and **0.8873 / 0.6207 / 0.4000**; less disruptive, but no public improvement |
+| Anchor-terminated forward settling | Starts `D` from bounded stoppage evidence, then releases at the first persistent short-ball control anchor or restart long-ball launch | Exact public tie with the promoted candidate (**0.8947 / 0.6400 / 0.4865**); changed 116 full-match labels, all outside the 7,500 scored frames, so it remains a structural diagnostic rather than a promoted change |
 
 The active system keeps the useful parts of these ideas as evidence features, but does not let them override stronger anchors or protected `D`/`X` labels.
 
