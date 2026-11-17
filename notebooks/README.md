@@ -44,11 +44,13 @@ or transition resolver.
 
 ## Appendix
 
-The [appendix/](./appendix/) folder contains the detailed visual findings
-appendix, supporting definitions, the rule-book detail, retired experiments,
-and the sample-data restart audit. The executable first-half and duplicate
-load/Viterbi notebooks were removed because the main path now contains their
-authoritative versions or their conclusions are already recorded as notes.
+The written appendix now lives in
+[`possession_lab/appendix/`](../possession_lab/appendix/). It contains the
+supporting definitions, rule-book detail, model results, retired experiments,
+transition-trust log, glossary, and the first-half diagnostic note. The older
+duplicate `notebooks/appendix/` folder was removed because its documents were
+not referenced and its visual findings are now covered by notebooks 01, 03,
+04b, 08, and 09.
 
 ## Helper-first execution
 
@@ -79,7 +81,7 @@ This is intentionally a decoder comparison: scenarios and anchors are still
 detected once and passed to every model.
 
 Plots are audit views over the same feature table. A visual observation is not a hand-written label.
-The reusable evidence timeline is `possession.calculations.plotting.plot_timeline_window()`;
+The reusable evidence timeline is `possession_lab.calculations.plotting.plot_timeline_window()`;
 the composite pitch-plus-timeline view is `plot_evidence_window()`. They render match-clock time,
 nearest-team observations, selected anchors, scenario markers, missing-ball intervals, and an
 optional public ground-truth strip. Notebooks select the case window; they do not reimplement the

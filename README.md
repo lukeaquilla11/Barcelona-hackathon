@@ -16,7 +16,7 @@ than reimplementing feature construction or decision logic:
 - `PipelineSpec` — declare the decision policy without duplicating implementation code.
 - `plot_timeline_window()` and `plot_evidence_window()` — render reusable audit views with match-clock axes, scenario/anchor evidence, and an optional public ground-truth strip.
 
-Lower-level calculations remain in `possession/calculations/`, scenario rules in `possession/scenarios/`, and model composition in `possession/models/`. The notebooks are presentation and audit clients of these helpers; they should not become a second implementation of the pipeline.
+Lower-level calculations remain in `possession_lab/calculations/`, scenario rules in `possession_lab/scenarios/`, and model composition in `possession_lab/models/`. The notebooks are presentation and audit clients of these helpers; they should not become a second implementation of the pipeline.
 
 ## Layered architecture
 
@@ -43,7 +43,7 @@ plots are in [notebooks/08_model_evaluation.ipynb](./notebooks/08_model_evaluati
 was retired because it referenced obsolete model names; the current 08 notebook is the only presentation runner.
 
 Visual checks are also helper-first. The evidence timeline is a plotting function in
-`possession/calculations/plotting.py`, not notebook-specific labelling logic. The notebooks
+`possession_lab/calculations/plotting.py`, not notebook-specific labelling logic. The notebooks
 choose the frame window and provide optional public ground truth; the helper renders the same
 observation lanes, scenario markers, missing-ball shading, anchor margin, and match-clock axis
 for every case.
@@ -77,7 +77,7 @@ pip install -r requirements.txt
 jupyter notebook notebooks/00_load_data.ipynb
 ```
 
-- `possession/load_data.py` reads the match into numpy/pandas: ball and player positions in metres, team per track, Smart Tagging, homography and the public 5-minute ground truth. Row `i` is video frame `i`, the same as a submission row.
+- `possession_lab/baseline_pipeline.py` reads the match into numpy/pandas: ball and player positions in metres, team per track, Smart Tagging, homography and the public 5-minute ground truth. Row `i` is video frame `i`, the same as a submission row.
 - [`notebooks/00_load_data.ipynb`](./notebooks/00_load_data.ipynb) walks through it with plots.
 
 
