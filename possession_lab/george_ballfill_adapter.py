@@ -282,9 +282,34 @@ def add_george_ballfill_observations(
         np.minimum(observation_confidence, previous_confidence),
         0.0,
     )
+    # Preserve the HMM posteriors on model-imputed rows as provenance too.
+    # They are bounded evidence for the missing-ball path hypothesis, not
+    # direct possession labels.  Keeping separate names makes it possible to
+    # audit whether a later result came from a direct/geometric observation or
+    # from George's carrier/dead-ball model.
+    p_carrier = np.clip(
+        np.nan_to_num(out["ball_fill_p_carrier"].to_numpy(float), nan=0.0),
+        0.0,
+        1.0,
+    )
+    p_dead = np.clip(
+        np.nan_to_num(out["ball_fill_p_dead"].to_numpy(float), nan=0.0),
+        0.0,
+        1.0,
+    )
+    out["ball_fill_model_carrier_probability"] = np.where(
+        source_is_model_imputed,
+        p_carrier,
+        0.0,
+    )
+    out["ball_fill_model_dead_probability"] = np.where(
+        source_is_model_imputed,
+        p_dead,
+        0.0,
+    )
     out["ball_fill_dead_probability"] = np.where(
-        source_is_observed | source_is_reconstructed,
-        np.clip(np.nan_to_num(out["ball_fill_p_dead"].to_numpy(float), nan=0.0), 0.0, 1.0),
+        source_is_observed | source_is_reconstructed | source_is_model_imputed,
+        p_dead,
         0.0,
     )
     confidence_gate = np.ones(len(out), dtype=bool)

@@ -91,7 +91,13 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
 - [run_interpolated_flight_experiment.py](./run_interpolated_flight_experiment.py) — the canonical
   full runner; pass `--run-george-from-raw --george-data-dir /path/to/data` to create George's
   observations internally, or pass `--george-ballfill` only for an explicit generated-table
-  ablation. `--george-evidence-only` keeps tactical coordinates primary;
+  ablation. `--george-evidence-only` keeps tactical coordinates primary. For a reproducible
+  IDSSE-backed path experiment without video-detector caches, pass
+  `--run-george-hmm-only --george-data-dir /path/to/data`; it fuses the raw tactical/broadcast
+  observations, fills two-sided gaps with George's carrier/dead-ball HMM, and exposes the result
+  as bounded path/uncertainty evidence. It writes
+  `diagnostic_george_hmm_forward_settling_dead_ball.csv` separately from the reference output;
+  it does not import George's possession labels.
 - `diagnostic_forward_settling_dead_ball` — the promoted full-length candidate. It applies
   terminal-flight speed drop, future player settling, and receiver separation after the
   `NO_SWITCH` resolver, so D can begin near the evidence boundary instead of waiting for a
@@ -145,7 +151,11 @@ models without copying Haiqal's final labels.
 
 The current `origin/kinson` pointer is only the branch's initial commit; the later supervised
 modules on this branch are the useful Kinson work copied into `e1e77b2`. They require
-`scikit-learn`, `joblib`, and optional IDSSE access. The IDSSE provider was not reproducible in
-this checkout because its metadata response was empty, so the local Kinson experiment used only
-the supplied Metrica games' event-derived silver labels. Those labels are separate from the
-hackathon public ground truth and are used only to create a diagnostic auxiliary model.
+`scikit-learn`, `joblib`, and optional IDSSE access. The repository now also has a reproducible
+local IDSSE cache for George's carrier/dead-ball experiment: Kloppy parses the raw IDSSE files
+with `only_alive=False`, preserving `BallStatus=0` frames that are needed for dead-ball learning.
+The IDSSE matches are external training data, not the hackathon public labels. Their HMM output is
+therefore treated as path/uncertainty evidence only. On the public slice it changed 373 full-length
+labels but reduced the reference candidate to `0.8924 / 0.6400 / 0.4324`, versus
+`0.8947 / 0.6400 / 0.4865`; it remains a separately named robustness experiment rather than a
+public-score-selected model.

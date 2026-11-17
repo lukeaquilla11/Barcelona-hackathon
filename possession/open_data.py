@@ -115,8 +115,15 @@ def _parse(match_id):
     from kloppy import sportec  # only needed on the first, uncached load
 
     paths = download(match_id)
-    dataset = sportec.load_tracking(raw_data=paths["tracking"], meta_data=paths["meta"],
-                                    coordinates="sportec")       # metres, centre origin
+    # Keep dead-ball frames: George's stoppage model and our D state both need
+    # the full timeline. Kloppy defaults to ``only_alive=True``, which would
+    # silently remove every BallStatus=0 frame before labels are constructed.
+    dataset = sportec.load_tracking(
+        raw_data=paths["tracking"],
+        meta_data=paths["meta"],
+        coordinates="sportec",
+        only_alive=False,
+    )       # metres, centre origin
     df = dataset.to_df()
     home, away = dataset.metadata.teams                           # kloppy: home first
 

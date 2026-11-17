@@ -1140,6 +1140,24 @@ def add_missing_ball_path_hypothesis_features(
         0.0,
         1.0,
     )
+    # George's carrier posterior is not a possession label and is not a
+    # calibrated metre error.  It is nevertheless a useful conservative cap
+    # on support for model-imputed coordinates: low posterior cannot make a
+    # hidden path look reliable, while high posterior cannot override a poor
+    # geometric path.  Direct/flight observations without a carrier posterior
+    # are unaffected.
+    model_confidence = np.clip(
+        numeric("ball_fill_p_carrier", np.nan),
+        0.0,
+        1.0,
+    )
+    model_imputed = boolean("ball_fill_model_imputed")
+    model_confidence_available = model_imputed & np.isfinite(model_confidence)
+    path_reliability = np.where(
+        model_confidence_available,
+        np.minimum(path_reliability, model_confidence),
+        path_reliability,
+    )
     george_kalman_agreement = np.clip(
         numeric("ball_path_george_kalman_agreement_score", 0.0), 0.0, 1.0
     )
@@ -1210,6 +1228,11 @@ def add_missing_ball_path_hypothesis_features(
     out["missing_ball_path_player_support_score"] = np.where(missing, deflection_support, 0.0)
     out["missing_ball_path_uncertainty_m"] = np.where(missing, uncertainty, np.nan)
     out["missing_ball_path_reliability"] = np.where(missing, path_reliability, 0.0)
+    out["missing_ball_path_model_confidence"] = np.where(
+        missing & model_confidence_available,
+        model_confidence,
+        0.0,
+    )
     out["missing_ball_path_hypothesis"] = hypothesis
     out["missing_ball_path_hypothesis_confidence"] = np.where(confident, best, 0.0)
     out["missing_ball_path_hypothesis_margin"] = np.where(missing, margin, np.nan)

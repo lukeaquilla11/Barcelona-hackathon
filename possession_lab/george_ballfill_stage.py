@@ -18,6 +18,7 @@ import sys
 from pathlib import Path
 from typing import Sequence
 
+import numpy as np
 import pandas as pd
 
 
@@ -76,6 +77,91 @@ def build_george_observations_from_raw(
     return pd.read_csv(generated)
 
 
+def build_george_hmm_observations_from_raw(
+    *,
+    data_dir: str | Path,
+    game: str = "BAR-ATH",
+) -> pd.DataFrame:
+    """Build George-style fused/HMM observations without video detector caches.
+
+    The alternate tactical/broadcast observations are fused first.  Remaining
+    two-sided gaps are filled by George's pooled carrier/dead-ball HMM, whose
+    production models are trained from the seven IDSSE matches and the
+    non-scored portions of the challenge match.  The result is still an
+    observation table: it exposes ``source``, ``sigma_m``, ``p_carrier`` and
+    ``p_dead`` but never creates possession labels.
+
+    This mode is useful for a reproducible path/receiver experiment when the
+    optional video-detector cache is unavailable.  It keeps the same raw-data
+    contract as George's full runner and leaves video sightings for the full
+    ``build_george_observations_from_raw`` path.
+    """
+    from ballfill.carrier import CarrierHMM
+    from ballfill.data import load_ball_data, runs
+    from ballfill.evaluate import Gap
+    from ballfill.fuse import SOURCES, fuse
+    from ballfill.run import CONFIG
+
+    data = load_ball_data(game=game, data_dir=data_dir)
+    match = data.match
+    ball, source_codes, sigma, _ = fuse(data)
+    sources = np.array(SOURCES, dtype=object)[source_codes]
+
+    output_ball = ball.copy()
+    carrier_probability = np.full(data.n, np.nan, dtype=float)
+    dead_probability = np.full(data.n, np.nan, dtype=float)
+    gap_seconds = np.full(data.n, np.nan, dtype=float)
+    hmm = CarrierHMM(**CONFIG)
+    hmm.use_production_models(data)
+    for half in (1, 2):
+        half_frames = np.flatnonzero(match.half == half)
+        if not half_frames.size:
+            continue
+        first, last = int(half_frames[0]), int(half_frames[-1])
+        if not np.isfinite(output_ball[first]).all():
+            output_ball[first] = (match.pitch[0] / 2.0, match.pitch[1] / 2.0)
+            sources[first], sigma[first] = "kickoff", 1.0
+        seen = np.isfinite(output_ball[:, 0])
+        for start, end in runs(~seen & (match.half == half)):
+            if end > last:
+                output_ball[start:end] = output_ball[start - 1]
+                sources[start:end] = "filled"
+                gap_seconds[start:end] = (end - start) / 25.0
+                # Coordinate uncertainty for a trailing hold is deliberately
+                # conservative.  The downstream adapter also receives the
+                # HMM confidence separately and can cap path support with it.
+                sigma[start:end] = 8.0
+                continue
+            gap = Gap(start, end, half, np.arange(start, end), np.zeros((end - start, 2)))
+            filled = hmm(data, output_ball, gap)
+            frames = np.arange(start, end)
+            output_ball[frames] = filled
+            sources[frames] = "filled"
+            gap_seconds[frames] = (end - start) / 25.0
+            carrier_probability[frames] = hmm.last_conf
+            if hmm.last_dead is not None:
+                dead_probability[frames] = hmm.last_dead
+            # Do not claim a calibrated metre error for model-imputed points.
+            # ``p_carrier`` is the usable model-confidence channel here;
+            # direct/fused observations retain their geometric sigma values.
+            sigma[start:end] = 8.0
+
+    graded = match.graded
+    return pd.DataFrame(
+        {
+            "frame": np.flatnonzero(graded),
+            "x": np.round(output_ball[graded, 0], 3),
+            "y": np.round(output_ball[graded, 1], 3),
+            "source": sources[graded],
+            "sigma_m": np.round(sigma[graded], 2),
+            "gap_s": np.round(gap_seconds[graded], 2),
+            "p_video": np.nan,
+            "p_carrier": np.round(carrier_probability[graded], 3),
+            "p_dead": np.round(dead_probability[graded], 3),
+        }
+    )
+
+
 def build_our_observations_with_george(
     *,
     data_dir: str | Path,
@@ -106,6 +192,7 @@ def build_our_observations_with_george(
 
 __all__ = [
     "build_george_observations_from_raw",
+    "build_george_hmm_observations_from_raw",
     "build_our_observations_with_george",
     "train_george_video_models",
 ]

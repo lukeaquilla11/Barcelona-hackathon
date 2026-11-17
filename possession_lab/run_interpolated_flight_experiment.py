@@ -179,6 +179,14 @@ def main() -> None:
         help="run George's raw-video observation stage and pass its generated dataframe downstream",
     )
     parser.add_argument(
+        "--run-george-hmm-only",
+        action="store_true",
+        help=(
+            "run George's fused tactical/broadcast observations plus pooled carrier/dead-ball HMM; "
+            "keep tactical coordinates primary and expose the HMM as bounded path evidence"
+        ),
+    )
+    parser.add_argument(
         "--george-data-dir",
         type=Path,
         default=None,
@@ -204,29 +212,42 @@ def main() -> None:
         ),
     )
     args = parser.parse_args()
+    if args.run_george_from_raw and args.run_george_hmm_only:
+        parser.error("--run-george-from-raw and --run-george-hmm-only are mutually exclusive")
+    if (args.george_ballfill is not None) and args.run_george_hmm_only:
+        parser.error("--george-ballfill and --run-george-hmm-only are mutually exclusive")
     rules = load_rules()
     model = ClosestTeamRuleModel(data_dir=args.george_data_dir)
     george_table = None
-    if args.run_george_from_raw:
+    if args.run_george_from_raw or args.run_george_hmm_only:
         if args.george_ballfill is not None:
-            parser.error("--run-george-from-raw and --george-ballfill are mutually exclusive")
+            parser.error("a raw George mode and --george-ballfill are mutually exclusive")
         from possession_lab.george_ballfill_stage import build_george_observations_from_raw
 
         george_data_dir = args.george_data_dir or model.data_dir or os.environ.get(
             "MTAH_DATA_DIR", ROOT / "data"
         )
-        george_table = build_george_observations_from_raw(
-            data_dir=george_data_dir,
-            game=model.game,
-        )
-        print(f"George raw observation stage: {len(george_table):,} rows")
+        if args.run_george_hmm_only:
+            from possession_lab.george_ballfill_stage import build_george_hmm_observations_from_raw
+
+            george_table = build_george_hmm_observations_from_raw(
+                data_dir=george_data_dir,
+                game=model.game,
+            )
+            print(f"George fused/HMM observation stage: {len(george_table):,} rows")
+        else:
+            george_table = build_george_observations_from_raw(
+                data_dir=george_data_dir,
+                game=model.game,
+            )
+            print(f"George raw observation stage: {len(george_table):,} rows")
     temporal = build_engineered_features(
         model=model,
         rules=rules,
         george_ballfill_path=args.george_ballfill,
         george_ballfill_table=george_table,
-        george_allow_model_filled=args.george_allow_model_filled,
-        george_evidence_only=args.george_evidence_only,
+        george_allow_model_filled=(args.george_allow_model_filled or args.run_george_hmm_only),
+        george_evidence_only=(args.george_evidence_only or args.run_george_hmm_only),
         george_minimum_observation_confidence=args.george_minimum_confidence,
     )
     if args.george_ballfill is not None:
@@ -488,7 +509,10 @@ def main() -> None:
             minimum_candidate_run_frames=12,
             **profile,
         )
-        forward_settle_output = ROOT / "evaluation" / "results" / f"{name}.csv"
+        output_name = name
+        if args.run_george_hmm_only and name == "diagnostic_forward_settling_dead_ball":
+            output_name = "diagnostic_george_hmm_forward_settling_dead_ball"
+        forward_settle_output = ROOT / "evaluation" / "results" / f"{output_name}.csv"
         model.write_submission(forward_settle_output, forward_settle_labels)
         print(forward_settle_output)
         if name == "diagnostic_forward_settling_dead_ball":
@@ -646,7 +670,12 @@ def main() -> None:
     # stable post-control anchor, and (for missing-ball frames) a selected
     # George/Kalman path.  It is deliberately a family of separate outputs;
     # a pass attempt is not automatically a turnover.
-    interaction_prefix = "george_" if args.george_ballfill is not None else ""
+    if args.run_george_hmm_only:
+        interaction_prefix = "george_hmm_"
+    elif args.george_ballfill is not None:
+        interaction_prefix = "george_"
+    else:
+        interaction_prefix = ""
     for minimum_interaction_frames in (3, 5, 8):
         interaction_labels = apply_interaction_attempted_pass_switch(
             temporal,
