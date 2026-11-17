@@ -1,138 +1,82 @@
-# Barcelona hackathon: ball possession
+# Barcelona hackathon: frame-level possession
 
-Our entry for [More than a Hack 2027](https://github.com/metrica-sports/more-than-a-hack-2027): label every frame of Barcelona v Athletic as `H` / `A` / `D`.
+This repository labels every tactical frame of Barcelona–Athletic as Home
+(`H`), Away (`A`), dead ball (`D`), or not graded (`X`). The organiser-facing
+story is in [ORGANISER_REPORT.md](./ORGANISER_REPORT.md). It explains the
+football problem, the evidence we extract, the hypothesis-test resolver, and
+why the final policy is designed for a full match rather than only the public
+five-minute slice.
 
-## Public helper API
+## Read the notebooks in order
 
-The active implementation is in `possession_lab/`. The older `possession/`
-package is retained for compatibility and comparison baselines. The pipeline is
-intentionally modular: notebooks and scripts call reusable functions rather
-than reimplementing feature construction or decision logic:
+The notebooks are explanations and demonstrations. They call reusable
+functions from [possession_lab/](./possession_lab/) instead of maintaining a
+second implementation in notebook cells.
 
-- `build_evidence_table()` — load the supplied data and calculate the complete frame-level feature table;
-- `detect_scenarios()` — attach scenario confidence and episode evidence;
-- `select_model()` — choose one registered model specification, including the evaluated physics-veto candidate and the preserved `stage_hq_viterbi` diagnostic baseline;
-- `run_decision_pipeline()` — pass the feature table and scenario evidence to that selected model function;
-- `PipelineSpec` — declare the decision policy without duplicating implementation code.
-- `plot_timeline_window()` and `plot_evidence_window()` — render reusable audit views with match-clock axes, scenario/anchor evidence, and an optional public ground-truth strip.
+1. [00_load_data.ipynb](./notebooks/00_load_data.ipynb) — load the supplied data.
+2. [01_eda.ipynb](./notebooks/01_eda.ipynb) — establish the full-match problems: missing ball, missing players, restarts, and temporary track identities.
+3. [02_feature_engineering.ipynb](./notebooks/02_feature_engineering.ipynb) — derive motion, direction, arrival, pressure, activity, and missing-ball evidence.
+4. [03_scenario_engineering.ipynb](./notebooks/03_scenario_engineering.ipynb) — turn physical observations into football situations such as control, flight, reception, contest, and restart.
+5. [04_deadball_setpieces.ipynb](./notebooks/04_deadball_setpieces.ipynb) — identify stoppage and restart boundaries without copying Smart Tags as labels.
+6. [04b_ball_missing_player_analysis.ipynb](./notebooks/04b_ball_missing_player_analysis.ipynb) — inspect missing-ball and missing-player cases using backward and forward context.
+7. [05_anchors_rulebook.ipynb](./notebooks/05_anchors_rulebook.ipynb) — define stable possession and restart anchors.
+8. [06_transition_markers.ipynb](./notebooks/06_transition_markers.ipynb) — open local transition intervals when contact, arrival, restart, or dead-ball evidence changes.
+9. [07_probability_transition_model.ipynb](./notebooks/07_probability_transition_model.ipynb) — compare evidence hypotheses and resolve ambiguous intervals conservatively.
+10. [08_run_pipeline.ipynb](./notebooks/08_run_pipeline.ipynb) — rebuild the final submission from raw data.
+11. [08_model_evaluation.ipynb](./notebooks/08_model_evaluation.ipynb) — score the public slice and inspect disagreements.
+12. [09_experimental_results.ipynb](./notebooks/09_experimental_results.ipynb) — compact comparison of alternative policies; this is audit material, not the production runner.
 
-Lower-level calculations remain in `possession_lab/calculations/`, scenario rules in `possession_lab/scenarios/`, and model composition in `possession_lab/models/`. The notebooks are presentation and audit clients of these helpers; they should not become a second implementation of the pipeline.
+Optional collaborator studies are kept in [notebooks/appendix/](./notebooks/appendix/), including the raw alternate-camera ball-observation walkthrough and the independent distance/speed observation baseline.
 
-## Layered architecture
+## Run the final pipeline
 
-The pipeline keeps evidence construction separate from decision policy:
+From the repository root, with the supplied data available under `data/`:
 
-1. **Measurement layer** — load the supplied tracking/Smart Tagging data and build one shared frame-level evidence table.
-2. **Scenario layer** — combine the modular measurements into scenario context and confidence signals.
-3. **Anchor/transition layer** — identify stable H/A/D evidence and resolve uncertain intervals conservatively.
-4. **Model layer** — the model selector chooses how the shared evidence is handled. Direct policies use rules; decoder policies such as Viterbi/HMM add a transition model over the same evidence.
-5. **Evaluation layer** — write the selected submission and score it only when the appropriate ground truth is available.
+```bash
+python -m possession_lab.reference_pipeline
+```
 
-The runner is deliberately thin: it calls the reusable helpers, passes their shared evidence to one selected model policy, and returns frame-aligned labels. The notebooks are the organiser-facing explanation of the observations; helper modules contain the implementation.
+This calls the modular loader, feature builder, scenario and anchor rules,
+transition hypotheses, bounded three-family resolver, and submission writer.
+It writes [final_submission.csv](./evaluation/results/final_submission.csv)
+and runs the public evaluator. The active policy is:
 
-The active implementation is organised under [`possession_lab/`](./possession_lab/):
-raw tracking and optional source-aware ball observations become motion,
-missing-ball, flight, and arrival features; then scenarios and anchors; then
-state-specific transition hypotheses and a shared interval resolver. A live
-H↔A candidate asks whether contact became controlled possession, a D→H/A
-candidate asks whether a restart is actually active, and H/A→D is marked at a
-local stop boundary. The final labels are `H/A/D/X`. Read the notebooks as one
-story: **Problem → Idea → Construction → Pipeline → Evaluation**.
+```text
+raw tracking
+→ physical and missing-ball evidence
+→ football scenarios and anchors
+→ H↔A / H-A→D / D→H-A hypotheses
+→ bounded interval resolver
+→ H/A/D/X
+```
 
-The transition resolver is evaluated conservatively. Its three-family hybrid
-requires a dead-ball hypothesis and independent forward-settling evidence
-before opening `D`, then releases only on local restart activation or
-persistent control. It ties the public reference while making fewer
-full-match changes than the unrestricted diagnostic, so it is the safer
-full-match candidate; the public score alone cannot prove private-match
-superiority.
+The representative full-match candidate is the bounded three-family hybrid. It
+ties the forward-settling reference on every public metric (`0.895` macro-F1,
+`0.640` spell-F1, `0.486` transition F1@25), but is safer as a mechanism: it
+opens `D` only when a dead-ball hypothesis is supported by forward settling,
+releases it only with restart or persistent control evidence, and preserves
+`CONTESTED` when the evidence is ambiguous.
 
-The current organiser-facing run is [notebooks/08_run_pipeline.ipynb](./notebooks/08_run_pipeline.ipynb).
-It executes the newer `possession_lab/run_interpolated_flight_experiment.py` runner and writes
-the `diagnostic_visible_ball_no_switch_interval` candidate. Public scoring and disagreement
-plots are in [notebooks/08_model_evaluation.ipynb](./notebooks/08_model_evaluation.ipynb). The earlier registry-based notebook
-was retired because it referenced obsolete model names; the current 08 notebook is the only presentation runner.
+## Robustness and scope
 
-Visual checks are also helper-first. The evidence timeline is a plotting function in
-`possession_lab/calculations/plotting.py`, not notebook-specific labelling logic. The notebooks
-choose the frame window and provide optional public ground truth; the helper renders the same
-observation lanes, scenario markers, missing-ball shading, anchor margin, and match-clock axis
-for every case.
+The public labels are used by the evaluator, not by the inference runner. The
+active policy uses physical units, football context, local backtracking and
+forward checking, and predeclared sensitivity checks. We do not select a model
+because of one public-window threshold win: the public slice contains only a
+small number of possession spells and is not representative of the missing-ball
+rate in the full match.
 
-The `stage_hq_viterbi` option preserves the independently developed three-state
-Viterbi decoder for a like-for-like experiment. It uses the same canonical
-feature/scenario/anchor table as the other models, but retains its simpler
-nearest-player, ball-speed, visibility, player-activity, out-of-play, and weak
-Smart-Tagging evidence handling. It is a comparison baseline, not a replacement
-for the richer physics-veto policy.
+George-style alternate-camera reconstruction and other learned or sequence
+decoders remain explicit appendix experiments. They can provide future path,
+uncertainty, receiver, and dead-ball evidence, but their final labels are never
+copied into the promoted resolver.
 
-Haiqal's branch contributed reusable windowed evidence and a raw
-distance/speed/dead-ball Viterbi baseline, which remain comparison material.
-George's branch contributed the source-aware ball-observation layer. The vendored
-`ballfill/` package now exposes its raw-video detector, verifier, carrier/dead-ball
-HMM, and fused observation runner. Its
-flight rows now expose displacement, direction, cumulative travel, and a
-landing-boundary candidate for long-ball analysis. When enabled, those
-observations can affect continuity only inside a tactical missing-ball gap;
-visible-ball geometry remains an auditable signal rather than an ownership
-override. The
-organiser-facing missing-ball walkthrough is
-[04b_ball_missing_player_analysis.ipynb](./notebooks/04b_ball_missing_player_analysis.ipynb):
-it explains George's alternate-camera sources, uncertainty, derived speed and
-displacement, and why those observations must be checked before they influence
-scenarios or transitions. The raw-data walkthrough and callable stage are in
-[04c_george_ballfill_pipeline.ipynb](./notebooks/04c_george_ballfill_pipeline.ipynb) and
-[george_ballfill_stage.py](./possession_lab/george_ballfill_stage.py). The generated ball CSV is
-only an audit artifact; the canonical runner can call the stage internally with
-`--run-george-from-raw`.
-
-Kinson's fitted classifier and Viterbi decoder are not part of the promoted
-pipeline. They were trained/tuned against event-derived labels, so they remain
-a separately documented supervised comparison rather than hidden evidence in a
-label-free method. No collaborator's final labels are copied into the active
-resolver. The local George coordinate-fill ablation changed upstream motion
-enough to reduce the public result, so George is retained as an auditable
-observation source and explicit ablation, not an automatic possession-label
-override.
-
-The canonical feature builder keeps one preliminary scenario lane,
-`scenario_context_observation`, before anchor selection and one final
-`scenario_context` lane after it. The first is an audit of what motion,
-visibility, restart, and missing-ball evidence says before ownership anchors;
-the second is the scenario context consumed downstream. Neither is a possession
-label, so we do not maintain a redundant third “anchor-refined scenario” field.
-
-`evidence_bounded_deadball` is an additional diagnostic policy: Smart Tagging
-provides restart context, while D is released only where a post-restart H/A
-control anchor is visible. It does not impose a fixed dead-ball duration.
-
-## Loading the data
+## Dependencies
 
 ```bash
 pip install -r requirements.txt
-jupyter notebook notebooks/00_load_data.ipynb
 ```
 
-Notebook 09 is self-starting on a fresh checkout: generated CSVs and
-`evaluation/scoreboard.csv` are intentionally ignored, so 09 reruns its model
-generators automatically when the scoreboard is absent. Use the repository
-root as the notebook working directory and select the same environment used by
-the install command. George's raw video-observation stage has additional
-optional dependencies listed in `ballfill/requirements.txt`; it is not needed
-to run the promoted reference model or the standard 09 ranking.
-
-- `possession_lab/baseline_pipeline.py` reads the match into numpy/pandas: ball and player positions in metres, team per track, Smart Tagging, homography and the public 5-minute ground truth. Row `i` is video frame `i`, the same as a submission row.
-- [`notebooks/00_load_data.ipynb`](./notebooks/00_load_data.ipynb) walks through it with plots.
-
-
-## Open Bundesliga data (for training)
-
-7 Bundesliga matches with per-frame ball possession and in-play flags: the IDSSE dataset (Bassek et al., *Scientific Data* 2025, CC-BY 4.0).
-
-- Download: https://huggingface.co/datasets/pysport/idsse-data
-- Load with [kloppy](https://github.com/PySport/kloppy): `kloppy.sportec.load_open_tracking_data(match_id=...)`
-- Paper: https://doi.org/10.1038/s41597-025-04505-y
-
-## Credits
-
-`games.py`, `starter/` and `evaluation/gt/` are from the challenge repository, MIT licence (see `LICENSE-more-than-a-hack`).
+The optional raw video-observation appendix has additional dependencies listed
+in [ballfill/requirements.txt](./ballfill/requirements.txt). They are not
+needed for the canonical submission run.

@@ -179,11 +179,12 @@ The path branch does not directly assign possession. It supplies uncertainty
 and candidate receiver/contact evidence to the transition hypotheses. The
 resolver is the only layer allowed to change the final interval label.
 
-The current public reference is the forward terminal-flight and scene-settling
-dead-ball policy combined with the no-switch interval resolver. The safer
-three-family hybrid applies a transition-state `ENTER_D` only when that same
-forward evidence supports a future settling run, then releases only on local
-restart/control evidence:
+The promoted full-match candidate is the bounded three-family hybrid. It
+contains the forward terminal-flight and scene-settling dead-ball evidence,
+but uses it inside an explicit transition-state resolver. `ENTER_D` is opened
+only when a dead-ball hypothesis is supported by a bounded forward settling
+run; `D` is released only by local restart activation or persistent control,
+and ambiguous evidence remains `CONTESTED`:
 
 | Candidate | Macro-F1 | Spell-F1 | Transition F1@25 |
 |---|---:|---:|---:|
@@ -191,17 +192,18 @@ restart/control evidence:
 | + dead-ball boundary evidence | 0.772 | 0.568 | 0.333 |
 | + visible-ball settling evidence | 0.889 | 0.600 | 0.444 |
 | + hypothesis-based no-switch resolver | 0.892 | 0.621 | 0.457 |
-| **+ forward-settling dead-ball onset (promoted)** | **0.895** | **0.640** | **0.486** |
-| **+ bounded three-family hybrid** | **0.895** | **0.640** | **0.486** |
+| + forward-settling dead-ball onset (reference) | 0.895 | 0.640 | 0.486 |
+| **+ bounded three-family hybrid (promoted)** | **0.895** | **0.640** | **0.486** |
 
 The result is encouraging but must be interpreted cautiously: the public
 window contains only 17 graded possession spells, and the full match contains
 many more missing-ball intervals. We therefore prefer mechanisms that are
 physically and tactically meaningful over a threshold that wins by a few
-public frames. The hybrid ties the public reference while changing 435
-full-match frames, compared with 1,430 changes from the unrestricted
-three-family diagnostic. It is therefore the safer mechanism to carry into a
-full-match run, subject to a final private-data audit.
+public frames. The hybrid ties the reference on all three public metrics while
+changing only 435 full-match frames, compared with 1,430 changes from the
+unrestricted three-family diagnostic. It is therefore the safer mechanism to
+represent the method on the private full match, subject to the unavoidable
+private-data uncertainty.
 
 ## 6. Missing-ball improvement: the next useful direction
 
