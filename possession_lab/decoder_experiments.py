@@ -338,6 +338,129 @@ def low_motion_dead_ball_evidence(
     return output.astype("<U1")
 
 
+def forward_settling_dead_ball_evidence(
+    features: pd.DataFrame,
+    base_labels: np.ndarray,
+    *,
+    lookahead_frames: int = 75,
+    maximum_current_speed_mps: float = 9.0,
+    maximum_terminal_speed_mps: float = 3.0,
+    minimum_speed_drop_mps: float = 4.0,
+    minimum_activity_drop_mps: float = 0.8,
+    minimum_receiver_separation_m: float = 3.0,
+    minimum_candidate_run_frames: int = 12,
+) -> np.ndarray:
+    """Infer an early dead-ball onset from forward terminal-flight evidence.
+
+    The existing visible-ball dead-ball detector is intentionally causal: it
+    waits for a trailing low-motion window. That protects live slow play, but
+    it can place ``D`` dozens of frames after a stoppage actually becomes
+    inferable. This diagnostic looks forward only to decide whether the
+    current ball path is settling into a stoppage:
+
+    * the ball is already below a terminal-flight speed;
+    * it loses substantial speed over a bounded future window;
+    * the future terminal speed and player activity are low;
+    * the nearest candidate receiver is separating rather than arriving.
+
+    A material direction change is an alternative contact/deflection signal,
+    not a requirement. A direction change by itself never creates ``D``.
+    Public labels are not used here; this is a bounded inference layer whose
+    output can be evaluated or used by a full-match runner.
+    """
+    output = np.asarray(base_labels, dtype="<U1").copy()
+    n_frames = len(features)
+    in_play = graded_mask(n_frames)
+    if n_frames == 0:
+        return output
+
+    def numeric(name: str, default: float = np.nan) -> np.ndarray:
+        return pd.to_numeric(
+            features.get(name, pd.Series(default, index=features.index)),
+            errors="coerce",
+        ).to_numpy(float)
+
+    speed = numeric("ball_speed_derived_mps")
+    direction_change = numeric(
+        "ball_direction_change_roll_max_rad",
+        numeric("ball_direction_change_rad", 0.0),
+    )
+    activity = numeric("player_activity_p90_mps")
+    nearest_distance = numeric("closest_distance_m")
+    missing = ~np.isfinite(numeric("ball_x")) | ~np.isfinite(numeric("ball_y"))
+    restart = features.get(
+        "restart_type", pd.Series(None, index=features.index)
+    ).to_numpy(object)
+    kickoff = np.isin(restart, ["Kick Off (Start)", "Kick Off (After Goal)"])
+
+    horizon = max(2, int(lookahead_frames))
+
+    def forward_mean(values: np.ndarray) -> np.ndarray:
+        return pd.Series(values[::-1], index=features.index).rolling(
+            horizon, min_periods=horizon
+        ).mean().to_numpy(float)[::-1]
+
+    def forward_last(values: np.ndarray) -> np.ndarray:
+        shifted = pd.Series(values[::-1], index=features.index).shift(horizon - 1)
+        return shifted.to_numpy(float)[::-1]
+
+    future_speed = forward_last(speed)
+    future_speed_mean = forward_mean(speed)
+    future_activity_mean = forward_mean(activity)
+    future_distance = forward_last(nearest_distance)
+    speed_drop = speed - future_speed
+    receiver_separation = future_distance - nearest_distance
+
+    terminal_flight = (
+        np.isfinite(speed)
+        & np.isfinite(future_speed)
+        & (speed <= float(maximum_current_speed_mps))
+        & (future_speed <= float(maximum_terminal_speed_mps))
+        & (speed_drop >= float(minimum_speed_drop_mps))
+    )
+    scene_settles = (
+        np.isfinite(future_activity_mean)
+        & np.isfinite(activity)
+        & (future_activity_mean <= float(maximum_terminal_speed_mps))
+        & ((activity - future_activity_mean) >= float(minimum_activity_drop_mps))
+    )
+    receiver_not_arriving = (
+        np.isfinite(nearest_distance)
+        & np.isfinite(future_distance)
+        & (receiver_separation >= float(minimum_receiver_separation_m))
+    )
+    # A direction turn is meaningful only as a contact/deflection alternative
+    # when it is accompanied by terminal flight and scene settling. This
+    # prevents a normal pass turning into a dead-ball label.
+    direction_turn = direction_change >= 0.35
+    candidate = (
+        terminal_flight
+        & scene_settles
+        & (receiver_not_arriving | direction_turn)
+        & ~missing
+        & in_play
+        & ~kickoff
+    )
+
+    accepted = np.zeros(n_frames, dtype=bool)
+    minimum_run = max(1, int(minimum_candidate_run_frames))
+    start = 0
+    while start < n_frames:
+        if not candidate[start]:
+            start += 1
+            continue
+        end = start + 1
+        while end < n_frames and candidate[end]:
+            end += 1
+        if end - start >= minimum_run:
+            accepted[start:end] = True
+        start = end
+
+    output[accepted] = "D"
+    output[~in_play] = "X"
+    return output
+
+
 def literal_out_of_bounds_dead_ball_evidence(
     features: pd.DataFrame,
     base_labels: np.ndarray,

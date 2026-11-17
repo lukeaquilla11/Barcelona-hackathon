@@ -89,6 +89,21 @@ def add_temporal_features(
     out["ball_acceleration_mps2"] = out["ball_speed_derived_mps"].diff() * fps
     direction_delta = out["ball_direction_rad"].diff()
     out["ball_direction_change_rad"] = np.arctan2(np.sin(direction_delta), np.cos(direction_delta)).abs()
+    # A one-frame angle is useful for contact timing but is noisy under
+    # tracking jitter. Keep short-window extrema and forward context as
+    # separate observations so transition and dead-ball logic can distinguish
+    # a genuine turn from ordinary straight-line deceleration.
+    direction_window = max(3, min(9, window))
+    direction_change = out["ball_direction_change_rad"]
+    out["ball_direction_change_roll_max_rad"] = direction_change.rolling(
+        direction_window, min_periods=1
+    ).max()
+    out["ball_direction_change_roll_mean_rad"] = direction_change.rolling(
+        direction_window, min_periods=1
+    ).mean()
+    out["ball_direction_change_forward_max_rad"] = pd.Series(
+        direction_change.to_numpy(float)[::-1], index=out.index
+    ).rolling(direction_window, min_periods=1).max().to_numpy(float)[::-1]
     out["ball_speed_drop_mps"] = out["ball_speed_derived_mps"].shift(1) - out["ball_speed_derived_mps"]
     interp_dx = ball_x_interp.diff() * float(_value(rules, "pitch", "length_m"))
     interp_dy = ball_y_interp.diff() * float(_value(rules, "pitch", "width_m"))

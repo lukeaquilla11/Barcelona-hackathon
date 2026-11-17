@@ -20,9 +20,13 @@ The path is deliberately **Problem → Idea → Construction → Pipeline → Ev
 Core conclusion: the observations are useful; mapping them to confidence and
 H/A/D labels is the bottleneck. No fixed D hold duration is used.
 
-The current organiser-facing winner is `diagnostic_visible_ball_no_switch_interval`
-(Macro-F1 `0.8917`, Spell-F1 `0.6207`, Transition F1@25 `0.4571` on the public
-five-minute slice). Its resolver is the balanced-current profile. George remains
+The current organiser-facing winner is `diagnostic_forward_settling_dead_ball`
+(Macro-F1 `0.8947`, Spell-F1 `0.6400`, Transition F1@25 `0.4865` on the public
+five-minute slice). It starts from the balanced `NO_SWITCH` resolver and adds a
+bounded forward terminal-flight/scene-settling detector: a visible ball slows or
+stops, no plausible receiver arrives, and nearby player activity settles. Robust
+direction-change features are included as supporting evidence, never as a
+standalone D trigger. George remains
 an upstream observation adapter; Haiqal is a comparison baseline, and Kinson's
 fitted supervised model is appendix-only. Their final labels never override our
 anchors or interval hypotheses. With the available
@@ -77,6 +81,11 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
   full runner; pass `--george-ballfill /path/to/BAR-ATH_ball.csv` and optionally
   `--george-evidence-only` to place George observations at the start of the same
   feature/scenario/anchor/transition pipeline;
+- `diagnostic_forward_settling_dead_ball` — the promoted full-length candidate. It applies
+  terminal-flight speed drop, future player settling, and receiver separation after the
+  `NO_SWITCH` resolver, so D can begin near the evidence boundary instead of waiting for a
+  long trailing low-motion run. The 75-frame balanced profile improved all three public
+  metrics; longer and stricter predeclared profiles tied the previous winner.
 - `diagnostic_channel_profile_anchor_dominant`, `diagnostic_channel_profile_balanced`, and
   `diagnostic_channel_profile_independent_support` — predeclared transition-channel ablations.
   They combine anchor agreement, ball motion/contact, player arrival, restart continuity, and

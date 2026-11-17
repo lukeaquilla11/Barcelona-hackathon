@@ -11,6 +11,7 @@ from possession_lab.decoder_experiments import (
     _remove_short_dead_runs,
     classify_scenarios,
     dead_ball_boundary_evidence,
+    forward_settling_dead_ball_evidence,
     low_motion_dead_ball_evidence,
     retain_no_switch_intervals,
     local_touch_viterbi,
@@ -420,6 +421,46 @@ def main() -> None:
     )
     model.write_submission(no_switch_output, no_switch_labels)
     print(no_switch_output)
+
+    # Use bounded forward terminal-flight evidence to place the onset of D
+    # closer to the first inferable stoppage boundary. This does not treat
+    # direction change as D by itself: a turn must be accompanied by terminal
+    # flight and scene settling. The balanced profile is the promoted output;
+    # the long-horizon and strict profiles remain sensitivity audits.
+    forward_settling_profiles = {
+        "diagnostic_forward_settling_dead_ball": {
+            "lookahead_frames": 75,
+            "maximum_terminal_speed_mps": 4.0,
+            "minimum_speed_drop_mps": 4.0,
+            "minimum_activity_drop_mps": 0.8,
+            "minimum_receiver_separation_m": 3.0,
+        },
+        "diagnostic_forward_settling_dead_ball_long_horizon": {
+            "lookahead_frames": 90,
+            "maximum_terminal_speed_mps": 4.0,
+            "minimum_speed_drop_mps": 4.0,
+            "minimum_activity_drop_mps": 0.8,
+            "minimum_receiver_separation_m": 3.0,
+        },
+        "diagnostic_forward_settling_dead_ball_strict": {
+            "lookahead_frames": 75,
+            "maximum_terminal_speed_mps": 4.0,
+            "minimum_speed_drop_mps": 4.5,
+            "minimum_activity_drop_mps": 1.0,
+            "minimum_receiver_separation_m": 4.0,
+        },
+    }
+    for name, profile in forward_settling_profiles.items():
+        forward_settle_labels = forward_settling_dead_ball_evidence(
+            temporal,
+            no_switch_labels,
+            maximum_current_speed_mps=10.0,
+            minimum_candidate_run_frames=12,
+            **profile,
+        )
+        forward_settle_output = ROOT / "evaluation" / "results" / f"{name}.csv"
+        model.write_submission(forward_settle_output, forward_settle_labels)
+        print(forward_settle_output)
 
     # Local short-touch/flight path diagnostic.  This is deliberately kept
     # separate from the promoted resolver: it compares a no-switch path, a

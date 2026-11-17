@@ -637,3 +637,37 @@ missing contact/control signal. The diagnostic remains appendix-only; the next
 useful improvement is better arrival and post-touch control evidence on the
 private full match, not another decoder-threshold sweep.
 
+## Forward terminal-flight dead-ball onset
+
+### Problem
+
+The visible-ball + `NO_SWITCH` resolver was conservative about entering `D`.
+Its trailing low-motion confirmation was safe but late in cases where the ball
+was still visible, travelling through its terminal phase, and no plausible
+receiver was arriving. The reviewed window around frames `15889:15993` is the
+clearest example: the ball travelled almost straight, so a direction-change
+threshold alone could not explain the public `D` boundary.
+
+### Signal and construction
+
+The promoted detector is applied after the existing `NO_SWITCH` resolver. It
+uses current and forward ball speed, a bounded speed drop, future player
+activity settling, and separation from the nearest plausible receiver. The
+rolling/forward direction-change features are available as supporting motion
+evidence, but direction change never creates `D` by itself. The balanced
+profile uses a 75-frame look-ahead, current speed at most 10 m/s, future speed
+at most 4 m/s, a speed drop of at least 4 m/s, activity drop of at least 0.8,
+receiver separation of at least 3 m, and a 12-frame minimum run. These are
+physics/scene constraints, not labels fitted to the public ground truth.
+
+### Public evaluation
+
+The balanced profile changed 82 full-match frames. Of the 22 changed frames in
+the graded public slice, 19 corrected `A → D` at the onset and 3 were early by
+three frames (`15886:15888`). It improved the public scores from
+`0.891747 / 0.620690 / 0.457143` to **Macro-F1 `0.894673`, Spell-F1
+`0.640000`, Transition F1@25 `0.486486`**. The 90-frame and stricter
+predeclared profiles tied the previous score, so they were not promoted. The
+remaining 60 changed frames are outside the public graded slice and are kept
+for private full-match audit rather than treated as confirmed errors.
+
