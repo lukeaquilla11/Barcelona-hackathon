@@ -90,7 +90,11 @@ def add_george_ballfill_observations(
     fill = load_george_ballfill(ballfill_path, len(out)).set_index("frame")
     index = pd.Index(pd.to_numeric(out["frame"], errors="raise").astype(int), name="frame")
 
-    source = fill["source"].reindex(index).astype("string").to_numpy(object)
+    # Reindexing leaves frames outside George's output as pandas ``<NA>``.
+    # Convert those to an ordinary empty string before NumPy membership tests;
+    # ``np.isin`` cannot compare ``pd.NA`` safely and would abort the optional
+    # integration before it reaches feature construction.
+    source = fill["source"].reindex(index).astype("string").fillna("").to_numpy(dtype=str)
     out["ball_fill_source"] = source
     for column in ("sigma_m", "gap_s", "p_video", "p_carrier", "p_dead"):
         name = f"ball_fill_{column}"

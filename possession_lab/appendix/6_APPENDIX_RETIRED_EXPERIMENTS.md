@@ -56,8 +56,11 @@ retention and a turnover.
 ### Collaborator integration conclusion
 
 George's ballfill is best placed before feature construction, with source and
-uncertainty retained. It improves upstream ball coverage but tied the public
-labels in this slice. Haiqal's clues are best placed as bounded auxiliary
+uncertainty retained. The current local `BAR-ATH_ball.csv` fills 16,140 tactical
+gaps and changes 7,751 final labels, but its public result is lower
+(`0.8723 / 0.6000 / 0.3889`) than the active model. It is therefore useful as
+an observation audit and private-match hypothesis, not a promoted fill policy.
+Haiqal's clues are best placed as bounded auxiliary
 observations; they also tied the public labels. Kinson's branch is an independent
 HMM/Viterbi system with homography weighting and Smart Tag priors; its standalone
 decoder is not compatible with our anchor protections and is not imported as

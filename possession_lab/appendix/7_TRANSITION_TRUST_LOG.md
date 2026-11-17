@@ -204,11 +204,13 @@ emission label.
 ## Final public audit and private-match policy
 
 The current visible-ball plus `NO_SWITCH` interval resolver was re-evaluated
-with the new soft contact/arrival channel, George observations, Haiqal bounded
-support, and the resolver-profile sweep. The representative public result is
+with the new soft contact/arrival channel, Haiqal bounded support, and the
+resolver-profile sweep. The representative public result is
 Macro-F1 **0.8917**, Spell-F1 **0.6207**, and Transition F1@25 **0.4571**.
-Those additions either changed no public labels or remained tied, so they are
-kept as uncertainty/evidence channels rather than claimed performance gains.
+Haiqal/Kinson bounded evidence remained a tie. The actual George CSV ablation
+was evaluated separately and fell to Macro-F1 **0.8723**, Spell-F1 **0.6000**,
+and Transition F1@25 **0.3889**, so George remains an optional upstream audit
+source rather than a promoted label input.
 
 The public disagreement audit found 820 graded errors. The largest groups were
 H→A and A→H runs inside contested/unknown/flight contexts, plus D→A runs near

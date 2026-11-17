@@ -25,7 +25,9 @@ The current organiser-facing winner is `diagnostic_visible_ball_no_switch_interv
 five-minute slice). Its resolver is the balanced-current profile. George,
 Haiqal, and Kinson remain optional observation adapters: they may add coverage
 or auxiliary evidence on the private full match, but their final labels never
-override our anchors or interval hypotheses.
+override our anchors or interval hypotheses. With the available
+`data/ball/BAR-ATH_ball.csv`, George's observed/fused fill ablation scored
+`0.8723 / 0.6000 / 0.3889`, below the winner, so it is not enabled by default.
 
 ## Appendix
 
@@ -57,7 +59,9 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
   source and uncertainty, and fills only eligible tactical gaps before feature construction;
 - [run_george_ballfill_experiment.py](./run_george_ballfill_experiment.py) — runs the current best
   visible-ball + NO_SWITCH resolver as a separate George-observation ablation and can compare the
-  upstream motion/scenario signals against the no-George feature table;
+  upstream motion/scenario signals against the no-George feature table. With the current local CSV
+  it fills 16,140 tactical gaps, changes 7,751 final labels, and lowers the public score, so this
+  remains an explicit ablation rather than the promoted model;
 - [run_interpolated_flight_experiment.py](./run_interpolated_flight_experiment.py) — the canonical
   full runner; pass `--george-ballfill /path/to/BAR-ATH_ball.csv` to place George observations at
   the start of the same feature/scenario/anchor/transition pipeline;
@@ -82,8 +86,8 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
   The Kinson Viterbi path is also emitted as a standalone diagnostic, never copied into the
   promoted labels. On the available public slice, the sample-only standalone path scored Macro-F1
   `0.6425`, Spell-F1 `0.3590`, and Transition F1@25 `0.2667`; every bounded integration was an
-  exact label/score tie with the current best (`0.8917 / 0.6207 / 0.4571`). George + Kinson also
-  tied. This is evidence that the resolver protects the pipeline from a weak auxiliary model, not
+  exact label/score tie with the current best (`0.8917 / 0.6207 / 0.4571`) without George's fill
+  being enabled. This is evidence that the resolver protects the pipeline from a weak auxiliary model, not
   evidence that the sample-only classifier is ready for the private match.
 - [../config/possession_rules.yaml](../config/possession_rules.yaml) — configuration-backed thresholds and windows.
 

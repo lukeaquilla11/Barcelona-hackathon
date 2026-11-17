@@ -181,8 +181,8 @@ the supervised decoder with the evidence adapter. With a local model trained onl
 Metrica games and their event-derived silver labels, the standalone path scored Macro-F1 `0.6425`,
 Spell-F1 `0.3590`, and Transition F1@25 `0.2667` on the public slice. Bounded probability
 contributions of `0`, `0.02`, `0.04`, and `0.08` all produced exactly the current best labels and
-metrics: Macro-F1 `0.8917`, Spell-F1 `0.6207`, and Transition F1@25 `0.4571`. The George + Kinson
-variants also tied. The unchanged labels are expected: our resolver requires anchors and interval
+metrics: Macro-F1 `0.8917`, Spell-F1 `0.6207`, and Transition F1@25 `0.4571` without George's fill
+being enabled. The unchanged labels are expected: our resolver requires anchors and interval
 support before it accepts a handoff, so a weak or ambiguous auxiliary opinion cannot create a
 turnover. This is the safe integration result; it is not a claim that a sample-only classifier is
 validated for the private full match.
@@ -240,14 +240,19 @@ scenario classification. The adapter preserves the tactical ball, accepts only o
 George sources by default, records source and positional uncertainty, and fills eligible tactical
 gaps. It does not import George's carrier-HMM labels as possession labels.
 
-The paired audit found 5,810 filled tactical gaps, 5,343 changed scenario-context frames, and
-10,187 changed missing-ball-cause frames. The downstream visible-ball + `NO_SWITCH` resolver
-changed 3,576 full-timeline labels, but none of those changes fell on a public scored H/A/D frame.
-The public metrics therefore tied the reference exactly: Macro-F1 `0.8917`, Spell-F1 `0.6207`, and
-Transition F1@25 `0.4571`. This is not evidence that better ball observations are useless; it says
-that this five-minute slice contains no scored case where the new geometry supports a different
-final answer. The experiment remains useful for full-match coverage and for later uncertainty-
-weighted transition evidence.
+The current local `data/ball/BAR-ATH_ball.csv` filled 16,140 tactical gaps, changed 15,033
+scenario-context frames and 26,524 missing-ball-cause frames, and changed 7,751 final labels,
+including 145 public-scored frames. The downstream result fell to Macro-F1 `0.8723`, Spell-F1
+`0.6000`, and Transition F1@25 `0.3889`. This is a useful negative result: George supplies
+additional observations, but this fill policy changes trajectory-derived scenarios enough to
+create unsupported ownership changes. The experiment remains useful for source audits and future
+uncertainty-weighted or source-specific transition evidence; it is not the promoted full-match
+label input.
+
+For completeness, enabling George's carrier-HMM `filled` source as a separate
+diagnostic filled 30,388 gaps and scored Macro-F1 `0.8796`, Spell-F1 `0.6069`,
+and Transition F1@25 `0.4000`. It is still below the reference and is more
+model-derived, so it remains disabled by default.
 
 Reproduce it with `run_george_ballfill_experiment.py --compare-baseline`, or pass
 `--george-ballfill` to the canonical full runner. The feature audit is kept separate from the

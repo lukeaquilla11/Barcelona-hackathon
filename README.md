@@ -62,9 +62,11 @@ homography-weighted HMM/Viterbi baseline and externally trained parameter ideas.
 The safe integration boundary is observation-level: George can improve the ball
 input before feature construction, while Haiqal/Kinson outputs can only be
 bounded auxiliary evidence. Their final labels are never copied into the active
-resolver. On the public slice these combinations tied the current best rather
-than improving it, so they remain auditable optional layers for the private
-full-match run.
+resolver. Haiqal/Kinson bounded evidence tied the current best on the public
+slice. The actual local `data/ball/BAR-ATH_ball.csv` George ablation changed
+upstream observations but reduced the public result, so George remains an
+optional, separately evaluated observation layer rather than part of the
+promoted winner.
 
 `evidence_bounded_deadball` is an additional diagnostic policy: Smart Tagging
 provides restart context, while D is released only where a post-restart H/A
