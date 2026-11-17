@@ -431,7 +431,7 @@ to audit.
 
 The requested branch is `origin/haiqal` at commit `5092f127`. It contains the
 earlier modular scenario evidence and rule-book implementation, including
-`possession/calculations/scenario_evidence.py` and the findings/rule-book
+`possession_lab/calculations/scenario_evidence.py` and the findings/rule-book
 notebooks. The current workspace adapted that scenario evidence into
 `possession_lab/calculations/scenario_evidence.py`, adding episode-level
 significant-player counts, home/away near-ball counts, and a crowd candidate

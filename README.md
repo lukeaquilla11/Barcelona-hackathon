@@ -80,3 +80,21 @@ pip install -r requirements.txt
 The optional raw video-observation appendix has additional dependencies listed
 in [ballfill/requirements.txt](./ballfill/requirements.txt). They are not
 needed for the canonical submission run.
+
+## Optional external-data experiment
+
+We also attempted the missing-ball observation experiment on the open IDSSE
+data: seven Bundesliga matches with per-frame ball possession and in-play
+flags. This data is useful for training or stress-testing a ball-path/carrier
+model, but it is not required by the promoted submission and no IDSSE assets
+are committed here.
+
+- [IDSSE dataset on Hugging Face](https://huggingface.co/datasets/pysport/idsse-data)
+- [Kloppy Sportec loader](https://github.com/PySport/kloppy):
+  `kloppy.sportec.load_open_tracking_data(match_id="J03WMX", only_alive=False)`
+- [IDSSE paper](https://doi.org/10.1038/s41597-025-04505-y)
+
+Kloppy can fetch the files by match ID when the optional dependencies and
+network access are available; manual copies are not needed. The experiment is
+kept separate because its external training data supports ball reconstruction,
+not direct hackathon possession labels.

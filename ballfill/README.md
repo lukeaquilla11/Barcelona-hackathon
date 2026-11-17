@@ -19,7 +19,8 @@ python -m ballfill.tune       # two-fold (by half) parameter selection
 
 The video steps need the tactical video and a GPU (about 5 hours in all on an M-series Mac). Without
 them `run.py` stops at the video step; the trained detectors and detections are in `cache/` on the
-machine that made them (ask, rather than recompute). Uses `possession/{features,degrade,open_data}.py`
+machine that made them (ask, rather than recompute). Uses the retained
+`possession/{load_data,features,degrade,open_data}.py` compatibility helpers
 and the open IDSSE matches (`OPEN_DATA_DIR`) for the pooled carrier classifier and test set C.
 
 ## Observed: 63.0% of graded frames
