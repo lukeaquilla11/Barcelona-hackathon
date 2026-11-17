@@ -45,7 +45,7 @@ live `H ↔ A` handoffs, local `H/A → D` onset, and `D → H/A` restart activa
 followed by control. Its states are `KEEP_CURRENT`, `SWITCH_TO_H`,
 `SWITCH_TO_A`, `ENTER_D`, `RESTART_TO_H`, `RESTART_TO_A`, and `CONTESTED`.
 The diagnostic ties the promoted public score (`0.8947 / 0.6400 / 0.4865`) but
-changes 1,563 ungraded full-match frames, so it is not promoted. This is an
+changes 1,430 ungraded full-match frames, so it is not promoted. This is an
 important robustness guard: an explicit state vocabulary is useful, but the
 current dead-ball onset evidence is not yet strong enough to rewrite private
 labels wholesale. George/IDSSE contributes carrier/dead-ball posteriors and

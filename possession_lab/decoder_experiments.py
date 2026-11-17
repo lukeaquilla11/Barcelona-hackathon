@@ -3446,13 +3446,24 @@ def resolve_three_family_transition_states(
         ),
         errors="coerce",
     ).fillna(0).to_numpy(int)
+    restart_activation = features.get(
+        "restart_activation", pd.Series(False, index=features.index)
+    ).fillna(False).to_numpy(bool)
+    control_anchor = features.get(
+        "control_anchor", pd.Series(False, index=features.index)
+    ).fillna(False).to_numpy(bool)
     graded = graded_mask(n)
 
     def local_end(start: int) -> int:
         return min(n, start + int(maximum_local_change_frames))
 
-    # ENTER_D is applied from the local onset until the first already
-    # observed restart/control release.  Existing X is never touched.
+    # ENTER_D is applied from the local onset until the first underlying
+    # restart/control release.  The previous implementation waited for a
+    # derived RESTART_TO_* state, but that state itself requires a persistent
+    # control run and therefore could never release the D hold in some
+    # otherwise valid restart episodes.  Use the primitive evidence here:
+    # restart activation is enough to stop extending D, while a control
+    # anchor needs the normal persistence guard.  Existing X is untouched.
     for start in np.flatnonzero(
         (states == "ENTER_D")
         & (enter_support >= float(minimum_enter_d_support))
@@ -3463,7 +3474,10 @@ def resolve_three_family_transition_states(
         for position in range(start, end):
             if output[position] == "X":
                 continue
-            if position > start and states[position].startswith("RESTART_TO_"):
+            if position > start and (
+                restart_activation[position]
+                or (control_anchor[position] and control_run[position] >= int(minimum_control_run_frames))
+            ):
                 break
             output[position] = "D"
 
