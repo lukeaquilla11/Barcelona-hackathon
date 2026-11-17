@@ -102,18 +102,54 @@ def add_temporal_features(
     speed_evidence = out["ball_speed_derived_mps"].where(
         out["ball_speed_derived_mps"].notna(), out["ball_speed_interpolated_mps"]
     )
+    # George's source-aware path is an optional third evidence channel for a
+    # tactical gap.  Only eligible, non-zero-confidence rows may contribute;
+    # model-imputed ``filled`` rows remain excluded unless the caller
+    # explicitly enabled them in the adapter.
+    george_eligible = out.get(
+        "ball_fill_eligible", pd.Series(False, index=out.index)
+    ).fillna(False).to_numpy(bool)
+    george_confidence = _numeric(out, "ball_fill_observation_confidence").fillna(0.0).to_numpy(float)
+    george_supported = george_eligible & (george_confidence > 0.0)
+    george_speed = _numeric(out, "ball_fill_speed_mps").to_numpy(float)
+    george_displacement = _numeric(out, "ball_fill_displacement_m").to_numpy(float)
+    george_direction = _numeric(out, "ball_fill_direction_rad").to_numpy(float)
+    tactical_gap = out["ball_speed_derived_mps"].isna().to_numpy(bool)
+    george_gap_speed = george_supported & tactical_gap & np.isfinite(george_speed)
+    speed_evidence = speed_evidence.to_numpy(float).copy()
+    speed_evidence[george_gap_speed] = george_speed[george_gap_speed]
+    speed_evidence = pd.Series(speed_evidence, index=out.index, dtype=float)
+    out["ball_speed_george_evidence_mps"] = np.where(
+        george_gap_speed, george_speed, np.nan
+    )
+    out["ball_displacement_george_evidence_m"] = np.where(
+        george_supported & np.isfinite(george_displacement), george_displacement, np.nan
+    )
+    out["ball_direction_george_evidence_rad"] = np.where(
+        george_supported & np.isfinite(george_direction), george_direction, np.nan
+    )
+    out["ball_flight_george_evidence"] = (
+        george_supported
+        & out.get("ball_fill_long_ball_candidate", pd.Series(False, index=out.index)).fillna(False).to_numpy(bool)
+    )
+    out["ball_flight_george_distance_m"] = np.where(
+        george_supported,
+        _numeric(out, "ball_fill_flight_distance_m"),
+        np.nan,
+    )
     out["ball_speed_evidence_mps"] = speed_evidence
+    george_flight = out["ball_flight_george_evidence"]
     out["recent_flight_evidence_interpolated"] = (
         speed_evidence.shift(1).rolling(flight_window, min_periods=1).max()
         >= flight_speed
-    )
+    ) | george_flight.shift(1, fill_value=False).rolling(flight_window, min_periods=1).max().astype(bool)
     out["ball_flight_candidate_interpolated"] = (
         out["recent_flight_evidence_interpolated"]
         & (_numeric(out, "closest_distance_m") > float(_value(rules, "anchors", "stable_control_max_distance_m")))
     )
     out["recent_flight_evidence"] = (
         out["ball_speed_derived_mps"].shift(1).rolling(flight_window, min_periods=1).max() >= flight_speed
-    )
+    ) | george_flight.shift(1, fill_value=False).rolling(flight_window, min_periods=1).max().astype(bool)
     out["ball_flight_candidate"] = (
         out["recent_flight_evidence"]
         & (_numeric(out, "closest_distance_m") > float(_value(rules, "anchors", "stable_control_max_distance_m")))
@@ -1448,6 +1484,29 @@ def add_ball_kick_episode_features(
         kalman_displacement,
         displacement_observed,
     )
+    george_supported = out.get(
+        "ball_fill_eligible", pd.Series(False, index=out.index)
+    ).fillna(False).to_numpy(bool) & out.get(
+        "ball_fill_observation_confidence", pd.Series(0.0, index=out.index)
+    ).fillna(0.0).to_numpy(float).clip(0.0, 1.0).astype(bool)
+    george_speed = _numeric(out, "ball_speed_george_evidence_mps").to_numpy(float)
+    george_displacement = _numeric(out, "ball_displacement_george_evidence_m").to_numpy(float)
+    george_direction_change = _numeric(out, "ball_fill_direction_change_rad").to_numpy(float)
+    george_long_ball = out.get(
+        "ball_flight_george_evidence", pd.Series(False, index=out.index)
+    ).fillna(False).to_numpy(bool)
+    george_gap_support = missing & george_supported
+    speed = np.where(george_gap_support & np.isfinite(george_speed), george_speed, speed)
+    displacement = np.where(
+        george_gap_support & np.isfinite(george_displacement),
+        george_displacement,
+        displacement,
+    )
+    direction = np.where(
+        george_gap_support & np.isfinite(george_direction_change),
+        george_direction_change,
+        direction,
+    )
     speed = np.nan_to_num(speed, nan=0.0)
     acceleration = np.nan_to_num(acceleration, nan=0.0)
     direction = np.nan_to_num(direction, nan=0.0)
@@ -1464,6 +1523,7 @@ def add_ball_kick_episode_features(
             (acceleration >= long_acceleration)
             | ((speed >= long_speed) & (np.r_[0.0, speed[:-1]] < long_speed))
             | ((direction >= direction_start) & (speed >= 4.0))
+            | george_long_ball
         )
     )
     controlled_reception = out.get(
@@ -1477,6 +1537,7 @@ def add_ball_kick_episode_features(
     observation_source = np.full(len(out), None, dtype=object)
     observation_source[~missing] = "OBSERVED"
     observation_source[kalman_supported] = "KALMAN"
+    observation_source[george_gap_support] = "GEORGE"
     current = -1
     active = False
     for index in range(len(out)):
@@ -1517,10 +1578,92 @@ def add_ball_kick_episode_features(
     out["kick_episode_distance_m"] = distance
     out["kick_episode_observation_source"] = observation_source
     out["kick_episode_kalman_supported"] = kalman_supported
+    out["kick_episode_george_supported"] = george_gap_support
+    out["kick_episode_long_ball_candidate"] = george_long_ball | (
+        (distance.to_numpy(float) >= 3.0) & (episode_id >= 0)
+    )
     out["kick_episode_contact_change"] = np.maximum(
         np.clip(np.abs(acceleration) / max(long_acceleration, 1.0), 0.0, 1.0),
         np.clip(direction / 1.2, 0.0, 1.0),
     )
+    return out
+
+
+def add_long_ball_origin_anchor_features(features: pd.DataFrame) -> pd.DataFrame:
+    """Carry the last controlled team through an aerial flight interval.
+
+    A long ball is still launched by the team that controlled it before the
+    departure.  This feature keeps that origin team as a *continuity anchor*
+    until the flight ends.  It does not claim that the origin team wins the
+    landing contest: an opposing controlled reception and persistence can
+    still open the H/A switch hypothesis after the landing.
+    """
+    out = features.copy()
+    n = len(out)
+    episode = pd.to_numeric(
+        out.get("kick_episode_id", pd.Series(-1, index=out.index)), errors="coerce"
+    ).fillna(-1).to_numpy(int)
+    long_ball = out.get(
+        "kick_episode_long_ball_candidate", pd.Series(False, index=out.index)
+    ).fillna(False).to_numpy(bool)
+    tactical_gap = out.get(
+        "ball_fill_during_tactical_gap", pd.Series(False, index=out.index)
+    ).fillna(False).to_numpy(bool)
+    flight_observation = out.get(
+        "ball_fill_flight_observation", pd.Series(False, index=out.index)
+    ).fillna(False).to_numpy(bool)
+    observation_confidence = pd.to_numeric(
+        out.get(
+            "ball_fill_observation_confidence",
+            pd.Series(0.0, index=out.index),
+        ),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    # George's path is allowed to carry a continuity anchor only for the
+    # problem it is meant to solve: a tactical ball gap.  On visible tactical
+    # frames it remains useful geometry/provenance, but the tactical ball and
+    # our own contact/arrival evidence stay authoritative.
+    george_long_ball_gap = (
+        long_ball
+        & tactical_gap
+        & flight_observation
+        & (observation_confidence > 0.0)
+    )
+    anchor = out.get(
+        "anchor_team", pd.Series(None, index=out.index, dtype=object)
+    ).to_numpy(object)
+    origin_team = np.full(n, None, dtype=object)
+    active = np.zeros(n, dtype=bool)
+    landing = np.zeros(n, dtype=bool)
+    origin_confidence = np.zeros(n, dtype=float)
+
+    for episode_id in np.unique(episode[episode >= 0]):
+        positions = np.flatnonzero((episode == episode_id) & george_long_ball_gap)
+        if not positions.size:
+            continue
+        start = int(positions[0])
+        end = int(positions[-1])
+        before = start
+        while before >= 0 and anchor[before] not in {"H", "A"}:
+            before -= 1
+        if before < 0:
+            continue
+        team = anchor[before]
+        origin_team[start : end + 1] = team
+        active[start : end + 1] = True
+        origin_confidence[start : end + 1] = np.clip(
+            observation_confidence[start : end + 1],
+            0.0,
+            1.0,
+        )
+        # The final flight frame is a landing/control inspection boundary, not
+        # an automatic team switch. The resolver needs post-flight evidence.
+        landing[end] = True
+
+    out["flight_origin_anchor_team"] = origin_team
+    out["flight_origin_anchor_active"] = active
+    out["flight_origin_anchor_confidence"] = origin_confidence
+    out["flight_landing_boundary_candidate"] = landing
     return out
 
 

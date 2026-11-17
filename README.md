@@ -31,9 +31,12 @@ The pipeline keeps evidence construction separate from decision policy:
 The runner is deliberately thin: it calls the reusable helpers, passes their shared evidence to one selected model policy, and returns frame-aligned labels. The notebooks are the organiser-facing explanation of the observations; helper modules contain the implementation.
 
 The active implementation is organised under [`possession_lab/`](./possession_lab/):
-raw tracking and optional ball observations become motion/missing-ball features,
-then scenarios and anchors, then bounded transition hypotheses and a shared
-interval resolver. The final labels are `H/A/D/X`. Read the notebooks as one
+raw tracking and optional source-aware ball observations become motion,
+missing-ball, flight, and arrival features; then scenarios and anchors; then
+state-specific transition hypotheses and a shared interval resolver. A live
+H↔A candidate asks whether contact became controlled possession, a D→H/A
+candidate asks whether a restart is actually active, and H/A→D is marked at a
+local stop boundary. The final labels are `H/A/D/X`. Read the notebooks as one
 story: **Problem → Idea → Construction → Pipeline → Evaluation**.
 
 The current organiser-facing run is [notebooks/08_run_pipeline.ipynb](./notebooks/08_run_pipeline.ipynb).
@@ -57,7 +60,12 @@ for the richer physics-veto policy.
 
 Haiqal's branch contributed reusable windowed evidence and a raw
 distance/speed/dead-ball Viterbi baseline, which remain comparison material.
-George's branch contributed the source-aware ball-observation layer. The
+George's branch contributed the source-aware ball-observation layer. Its
+flight rows now expose displacement, direction, cumulative travel, and a
+landing-boundary candidate for long-ball analysis. When enabled, those
+observations can affect continuity only inside a tactical missing-ball gap;
+visible-ball geometry remains an auditable signal rather than an ownership
+override. The
 organiser-facing missing-ball walkthrough is
 [04b_ball_missing_player_analysis.ipynb](./notebooks/04b_ball_missing_player_analysis.ipynb):
 it explains George's alternate-camera sources, uncertainty, derived speed and

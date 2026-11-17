@@ -705,6 +705,7 @@ def plot_kick_phase_window(
             raise ValueError("ax must contain three axes")
     x = window["frame"].to_numpy(dtype=int)
     speed = pd.to_numeric(window.get("ball_speed_derived_mps"), errors="coerce")
+    speed_evidence = pd.to_numeric(window.get("ball_speed_evidence_mps", speed), errors="coerce")
     acceleration = pd.to_numeric(window.get("ball_acceleration_mps2"), errors="coerce")
     distance = pd.to_numeric(window.get("ball_displacement_m"), errors="coerce").fillna(0.0)
     departure = window.get("kick_departure_candidate", pd.Series(False, index=window.index)).fillna(False).to_numpy(bool).copy()
@@ -723,6 +724,12 @@ def plot_kick_phase_window(
                 axis.axvspan(x[phase_start] - 0.5, x[phase_end] + 0.5, color="#66c2a5", alpha=0.12,
                              label="kick phase" if number == 0 else "_nolegend_")
     axes[0].plot(x, speed, color="#1f77b4", label="ball speed")
+    axes[0].plot(x, speed_evidence, color="#2ca02c", linewidth=1.0, alpha=0.65,
+                 label="combined speed evidence")
+    if "ball_speed_george_evidence_mps" in window:
+        axes[0].plot(x, pd.to_numeric(window["ball_speed_george_evidence_mps"], errors="coerce"),
+                     color="#e66101", linestyle="--", alpha=0.85,
+                     label="George gap speed evidence")
     axes[0].set_ylabel("speed (m/s)")
     axes[0].set_title("Kick-phase ball speed")
     axes[1].plot(x, acceleration, color="#7b3294", label="ball acceleration")
@@ -731,6 +738,23 @@ def plot_kick_phase_window(
     axes[1].set_title("Acceleration/deceleration events")
     phase_distance = distance.cumsum()
     axes[2].plot(x, phase_distance.to_numpy(), color="#e66101", label="distance travelled")
+    if "ball_fill_flight_distance_m" in window:
+        axes[2].plot(x, pd.to_numeric(window["ball_fill_flight_distance_m"], errors="coerce"),
+                     color="#d95f02", linestyle="--", linewidth=1.4,
+                     label="George flight distance")
+    flight_mask = window.get(
+        "ball_flight_george_evidence", pd.Series(False, index=window.index)
+    ).fillna(False).to_numpy(bool)
+    starts_flight = np.flatnonzero(flight_mask & ~np.r_[False, flight_mask[:-1]])
+    ends_flight = np.flatnonzero(flight_mask & ~np.r_[flight_mask[1:], False])
+    for number, (left, right) in enumerate(zip(starts_flight, ends_flight)):
+        for axis in axes:
+            axis.axvspan(x[left] - 0.5, x[right] + 0.5, color="#fdae61", alpha=0.13,
+                         label="George long-ball evidence" if number == 0 else "_nolegend_")
+        axes[2].axvline(x[left], color="#d95f02", linestyle=":", alpha=0.8,
+                        label="flight departure" if number == 0 else "_nolegend_")
+        axes[2].axvline(x[right], color="#984ea3", linestyle=":", alpha=0.8,
+                        label="landing boundary" if number == 0 else "_nolegend_")
     axes[2].set_ylabel("cumulative distance (m)")
     axes[2].set_title("Ball distance travelled in the displayed window")
     axes[2].set_xlabel("tactical frame (match clock from first kickoff)")

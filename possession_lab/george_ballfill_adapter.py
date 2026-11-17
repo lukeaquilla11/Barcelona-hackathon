@@ -34,6 +34,7 @@ DEFAULT_ALLOWED_SOURCES = (
 # carrier/dead-ball model.  Neither should be described as a direct sighting.
 DIRECT_OBSERVATION_SOURCES = ("agree", "tac", "bc", "video")
 RECONSTRUCTED_SOURCES = ("flight", "filled")
+GEORGE_LONG_BALL_MIN_DISTANCE_M = 3.0
 SOURCE_CLASS_DIRECT = "direct_observation"
 SOURCE_CLASS_GEOMETRIC = "geometric_reconstruction"
 SOURCE_CLASS_MODEL = "model_imputation"
@@ -149,6 +150,53 @@ def add_george_ballfill_observations(
     fill_speed_mps[speed_valid] = fill_displacement_m[speed_valid] / elapsed_s[speed_valid]
     out["ball_fill_displacement_m"] = fill_displacement_m
     out["ball_fill_speed_mps"] = fill_speed_mps
+    fill_direction_rad = np.full(len(out), np.nan, dtype=float)
+    direction_valid = speed_valid & (fill_displacement_m > 0.0)
+    fill_direction_rad[direction_valid] = np.arctan2(
+        fill_dy_m[direction_valid], fill_dx_m[direction_valid]
+    )
+    fill_direction_change_rad = np.full(len(out), np.nan, dtype=float)
+    for position in np.flatnonzero(direction_valid):
+        if position <= 0 or not direction_valid[position - 1]:
+            continue
+        delta = fill_direction_rad[position] - fill_direction_rad[position - 1]
+        fill_direction_change_rad[position] = abs(np.arctan2(np.sin(delta), np.cos(delta)))
+    out["ball_fill_direction_rad"] = fill_direction_rad
+    out["ball_fill_direction_change_rad"] = fill_direction_change_rad
+
+    # ``flight`` is a provenance source for an edge-constrained geometric
+    # reconstruction.  Keep its episode geometry separate from the ordinary
+    # ball displacement so plots and scenarios can recognise a long travel
+    # phase without treating every reconstructed point as a kick or touch.
+    flight_source = source == "flight"
+    flight_step = flight_source & available & np.isfinite(fill_displacement_m)
+    flight_distance = np.zeros(len(out), dtype=float)
+    flight_start = np.zeros(len(out), dtype=bool)
+    flight_end = np.zeros(len(out), dtype=bool)
+    long_ball = np.zeros(len(out), dtype=bool)
+    position = 0
+    while position < len(out):
+        if not flight_step[position]:
+            position += 1
+            continue
+        end = position + 1
+        while (
+            end < len(out)
+            and flight_step[end]
+            and frame_values[end] == frame_values[end - 1] + 1
+        ):
+            end += 1
+        flight_start[position] = True
+        flight_end[end - 1] = True
+        cumulative = np.cumsum(np.nan_to_num(fill_displacement_m[position:end], nan=0.0))
+        flight_distance[position:end] = cumulative
+        if float(cumulative[-1]) >= GEORGE_LONG_BALL_MIN_DISTANCE_M:
+            long_ball[position:end] = True
+        position = end
+    out["ball_fill_flight_distance_m"] = flight_distance
+    out["ball_fill_flight_start_candidate"] = flight_start
+    out["ball_fill_flight_end_candidate"] = flight_end
+    out["ball_fill_long_ball_candidate"] = long_ball
     tactical_x_m = out["ball_x_tactical"].to_numpy(float) * float(pitch_length_m)
     tactical_y_m = out["ball_y_tactical"].to_numpy(float) * float(pitch_width_m)
     tactical_distance_valid = available & np.isfinite(tactical_x_m) & np.isfinite(tactical_y_m)
@@ -247,6 +295,7 @@ def add_george_ballfill_observations(
 __all__ = [
     "DEFAULT_ALLOWED_SOURCES",
     "DIRECT_OBSERVATION_SOURCES",
+    "GEORGE_LONG_BALL_MIN_DISTANCE_M",
     "RECONSTRUCTED_SOURCES",
     "SOURCE_CLASS_DIRECT",
     "SOURCE_CLASS_GEOMETRIC",

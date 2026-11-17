@@ -554,3 +554,32 @@ lost transition precision. This confirms the locality principle, but not a
 performance gain; keep the canonical NO_SWITCH candidate for private output
 and retain the boundary variants for further reviewed-window analysis.
 
+## State-specific transition hypotheses and long-ball provenance
+
+The transition layer now distinguishes three boundary families instead of
+treating every disagreement as the same switch:
+
+- **H↔A live play:** a nearest-player change or sharp ball acceleration,
+  deceleration, or direction change opens a hypothesis. The resolver still
+  requires team-level arrival/reception and post-touch persistence. When two
+  nearby players are from different teams or one track disappears, the interval
+  remains `NO_SWITCH` or `CONTESTED` until the bounded backward/forward evidence
+  is coherent.
+- **D→H/A:** restart context and player repositioning open a restart phase, but
+  only restart-compatible ball movement plus stable control creates a local
+  activation boundary. Moving the ball to the restart spot is not itself live
+  play.
+- **H/A→D:** an out-of-play or stronger dead-ball observation marks the local
+  stop boundary. Low pressure by itself is not treated as proof of a foul,
+  offside, or goal.
+
+George's `flight` rows are geometric reconstruction from gap edges, not direct
+video sightings. They now expose travel distance, direction, a long-ball
+candidate, and a landing-boundary candidate for plots and audits. Only an
+eligible George flight inside a tactical missing-ball gap can carry the launch
+team's continuity hypothesis; it cannot award the landing or override a visible
+controlled reception. The evidence-only George ablation did not improve the
+public score, so the promoted reference submission remains the no-George
+visible-ball + `NO_SWITCH` resolver. This preserves the signal for private-match
+auditing without turning a public-slice ablation into a fitted rule.
+

@@ -15,6 +15,7 @@ from possession_lab.temporal_rules import (
     add_anchor_features,
     add_anchor_forecast_features,
     add_ball_kick_episode_features,
+    add_long_ball_origin_anchor_features,
     add_boundary_anchor_features,
     add_first_time_pass_features,
     add_reachability_features,
@@ -38,6 +39,7 @@ from possession_lab.decoder_experiments import (
     add_scenario_episode_features,
     add_missing_ball_cause_features,
     add_transition_hypothesis_features,
+    add_transition_boundary_hypotheses,
     add_transition_trust_features,
     classify_scenarios,
 )
@@ -98,6 +100,7 @@ def build_engineered_features(
     temporal = add_first_time_pass_features(temporal)
     temporal = add_reception_episode_features(temporal)
     temporal = add_ball_kick_episode_features(temporal, rules)
+    temporal = add_long_ball_origin_anchor_features(temporal)
     temporal = add_missing_ball_cause_features(temporal)
     # Scenario detection has an explicit observation pass before the anchor
     # hierarchy. This records what the raw motion/visibility/restart evidence
@@ -122,6 +125,7 @@ def build_engineered_features(
         minimum_anchor_confidence=0.85,
     )
     temporal = add_transition_hypothesis_features(temporal)
+    temporal = add_transition_boundary_hypotheses(temporal)
     temporal = add_scenario_episode_features(temporal)
     return add_scenario_evidence_features(
         temporal,

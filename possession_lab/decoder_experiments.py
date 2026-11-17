@@ -1974,6 +1974,19 @@ def add_transition_hypothesis_features(
         np.maximum(cause_flight, np.maximum(cause_control, 0.75 * trajectory_continuity)),
     )
     no_switch_cause_support = np.maximum(no_switch_cause_support, george_flight_support)
+    flight_origin_active = boolean("flight_origin_anchor_active")
+    flight_origin_confidence = np.clip(
+        np.nan_to_num(numeric("flight_origin_anchor_confidence", 0.0), nan=0.0),
+        0.0,
+        1.0,
+    )
+    # The launch team remains the continuity hypothesis during flight. This
+    # does not assign the landing; the post-flight controlled reception still
+    # has to confirm an H/A switch.
+    no_switch_cause_support = np.maximum(
+        no_switch_cause_support,
+        flight_origin_active.astype(float) * flight_origin_confidence,
+    )
     contested_cause_support = np.maximum(cause_deflection, 0.85 * cause_crowd)
     dead_cause_support = np.maximum(cause_dead, george_dead_support)
     uncertainty_cause_support = np.maximum(
@@ -2130,12 +2143,131 @@ def add_transition_hypothesis_features(
     out["transition_george_flight_support"] = george_flight_support
     out["transition_george_dead_support"] = george_dead_support
     out["transition_george_uncertainty_support"] = george_uncertainty_support
+    out["transition_flight_origin_no_switch_support"] = (
+        flight_origin_active.astype(float) * flight_origin_confidence
+    )
     out["transition_kalman_path_available"] = kalman_available
     out["transition_kalman_reliable"] = kalman_reliable
     out["transition_kalman_uncertainty_m"] = kalman_uncertainty
     out["transition_kalman_support"] = kalman_available & kalman_reliable
     out["transition_missing_ball_cause"] = missing_cause
     out["transition_hypothesis_calibrated"] = False
+    return out
+
+
+def add_transition_boundary_hypotheses(features: pd.DataFrame) -> pd.DataFrame:
+    """Classify the transition family without deciding the final label.
+
+    Possession changes are not one event type.  A live-ball handoff asks
+    whether an opponent touch became controlled; a restart asks when a dead
+    interval became live; and a live-to-dead boundary asks when play stopped.
+    This function exposes those cases as auditable boundary evidence.  It is
+    deliberately conservative: no-pressure movement alone cannot prove a
+    foul, offside, or goal, so those remain ``DEAD_BALL_CANDIDATE`` until
+    restart context or stronger stop evidence is available.
+    """
+    out = features.copy()
+    n = len(out)
+
+    def boolean(name: str) -> np.ndarray:
+        return out.get(name, pd.Series(False, index=out.index)).fillna(False).to_numpy(bool)
+
+    anchor = out.get(
+        "selected_anchor_team",
+        out.get("anchor_team", pd.Series(None, index=out.index, dtype=object)),
+    ).to_numpy(object)
+    valid_anchor = np.isin(anchor, ["H", "A"])
+    prior_anchor = pd.Series(anchor, index=out.index, dtype=object).where(
+        valid_anchor
+    ).ffill().shift().to_numpy(object)
+
+    scenario = out.get(
+        "scenario_context_causal",
+        out.get("scenario_context", pd.Series("UNKNOWN", index=out.index)),
+    ).fillna("UNKNOWN").to_numpy(object)
+    restart_context = boolean("restart_context") | boolean("smart_set_piece")
+    restart_active = boolean("restart_ball_active") | boolean("restart_live_boundary_anchor")
+    restart_control = boolean("restart_confirmed_anchor") | boolean("restart_hinted_control_anchor") | boolean("restart_fallback_control_anchor")
+    out_of_play = boolean("ball_out_of_play_anchor")
+    low_motion_dead = boolean("low_motion_dead_ball_anchor")
+    dead_context = (scenario == "DEAD") | out_of_play | low_motion_dead
+    dead_start = dead_context & ~np.r_[False, dead_context[:-1]]
+    previous_dead = np.r_[False, dead_context[:-1]]
+
+    boundary_kind = np.full(n, "NONE", dtype=object)
+    boundary_reason = np.full(n, "NO_BOUNDARY", dtype=object)
+    boundary_requires_control = np.zeros(n, dtype=bool)
+
+    # Live -> dead: mark the boundary, not the entire dead interval.  A
+    # restart tag without physical stop evidence remains context only.
+    live_to_dead = dead_start & np.isin(prior_anchor, ["H", "A"])
+    boundary_kind[live_to_dead] = np.where(
+        prior_anchor[live_to_dead] == "H", "H_TO_D", "A_TO_D"
+    )
+    boundary_reason[live_to_dead] = np.where(
+        out_of_play[live_to_dead], "OUT_OF_PLAY", "DEAD_BALL_EVIDENCE"
+    )
+
+    # D -> live: only activate when a restart is physically active and there
+    # is a team-level control/restart anchor.  Player repositioning alone is
+    # intentionally not enough.
+    restart_activation = restart_context & restart_active
+    d_to_live = restart_activation & (previous_dead | restart_control) & valid_anchor
+    boundary_kind[d_to_live] = np.where(
+        anchor[d_to_live] == "H", "D_TO_H", "D_TO_A"
+    )
+    boundary_reason[d_to_live] = np.where(
+        restart_control[d_to_live], "RESTART_CONTROL", "RESTART_BALL_ACTIVE"
+    )
+    boundary_requires_control[d_to_live] = True
+
+    # Live H <-> A: the existing interval hypothesis is the correct object;
+    # this label makes the direction explicit for diagnostics and for future
+    # asymmetric policies.  It still requires the downstream resolver to
+    # observe contact/persistence before changing the final label.
+    switch_candidate = out.get(
+        "transition_hypothesis_state", pd.Series("NO_SWITCH", index=out.index)
+    ).eq("SWITCH_CANDIDATE").to_numpy(bool)
+    before_team = out.get(
+        "transition_before_anchor_team", pd.Series(None, index=out.index)
+    ).to_numpy(object)
+    after_team = out.get(
+        "transition_after_anchor_team", pd.Series(None, index=out.index)
+    ).to_numpy(object)
+    live_switch = switch_candidate & np.isin(before_team, ["H", "A"]) & np.isin(after_team, ["H", "A"])
+    boundary_kind[live_switch] = np.where(
+        (before_team[live_switch] == "H") & (after_team[live_switch] == "A"),
+        "H_TO_A",
+        "A_TO_H",
+    )
+    boundary_reason[live_switch] = "OPPOSITE_ANCHOR_INTERVAL"
+    boundary_requires_control[live_switch] = True
+
+    # A tagged restart with no confirmed active control is a phase hypothesis,
+    # not a label.  This is the explicit answer to “players move the ball to
+    # the spot, is it live yet?”
+    unresolved_restart = restart_context & ~d_to_live & ~dead_context
+    boundary_kind[unresolved_restart] = "RESTART_PHASE_UNRESOLVED"
+    boundary_reason[unresolved_restart] = "RESTART_CONTEXT_WITHOUT_CONTROL"
+    boundary_requires_control[unresolved_restart] = True
+
+    # Preserve the reason a live-ball interval is unresolved, especially when
+    # the ball itself is missing and George has no direct sighting.
+    ball_missing = boolean("ball_missing_observed") | ~np.isfinite(
+        pd.to_numeric(out.get("ball_x", pd.Series(np.nan, index=out.index)), errors="coerce").to_numpy(float)
+    ) | ~np.isfinite(
+        pd.to_numeric(out.get("ball_y", pd.Series(np.nan, index=out.index)), errors="coerce").to_numpy(float)
+    )
+    out["transition_boundary_kind"] = boundary_kind
+    out["transition_boundary_reason"] = boundary_reason
+    out["transition_boundary_requires_control"] = boundary_requires_control
+    out["transition_boundary_ball_missing"] = ball_missing
+    out["transition_boundary_is_local"] = boundary_kind != "NONE"
+    out["transition_handoff_direction"] = np.select(
+        [boundary_kind == "H_TO_A", boundary_kind == "A_TO_H"],
+        ["H_TO_A", "A_TO_H"],
+        default="NONE",
+    )
     return out
 
 
@@ -2244,6 +2376,9 @@ def build_transition_hypothesis_ledger(features: pd.DataFrame) -> pd.DataFrame:
                 "end_frame": int(interval["frame"].max()),
                 "duration_frames": int(len(interval)),
                 "state": state,
+                "boundary_kind": str(interval.get("transition_boundary_kind", pd.Series("NONE", index=interval.index)).mode().iloc[0]),
+                "boundary_reason": str(interval.get("transition_boundary_reason", pd.Series("NO_BOUNDARY", index=interval.index)).mode().iloc[0]),
+                "boundary_ball_missing": bool(interval.get("transition_boundary_ball_missing", pd.Series(False, index=interval.index)).any()),
                 "hypothesis_team": team,
                 "candidate_team": candidate_team,
                 "activity_max": float(numeric(interval, "transition_hypothesis_activity", 0.0).max(skipna=True)),
