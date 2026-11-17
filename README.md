@@ -23,8 +23,8 @@ second implementation in notebook cells.
 8. [06_transition_markers.ipynb](./notebooks/06_transition_markers.ipynb) — open local transition intervals when contact, arrival, restart, or dead-ball evidence changes.
 9. [07_probability_transition_model.ipynb](./notebooks/07_probability_transition_model.ipynb) — compare evidence hypotheses and resolve ambiguous intervals conservatively.
 10. [08_run_pipeline.ipynb](./notebooks/08_run_pipeline.ipynb) — rebuild the final submission from raw data.
-11. [08_model_evaluation.ipynb](./notebooks/08_model_evaluation.ipynb) — score the public slice and inspect disagreements.
-12. [09_experimental_results.ipynb](./notebooks/09_experimental_results.ipynb) — compact comparison of alternative policies; this is audit material, not the production runner.
+11. [08b_model_evaluation.ipynb](./notebooks/08b_model_evaluation.ipynb) — show a small set of public disagreement diagrams and turn them into case ideas; this is evaluation-only.
+12. [09_experimental_results.ipynb](./notebooks/09_experimental_results.ipynb) — optional comparison of alternative policies; this is audit material, not the production runner.
 
 Optional collaborator studies are kept in [notebooks/appendix/](./notebooks/appendix/), including the raw alternate-camera ball-observation walkthrough and the independent distance/speed observation baseline.
 
@@ -38,8 +38,9 @@ python -m possession_lab.reference_pipeline
 
 This calls the modular loader, feature builder, scenario and anchor rules,
 transition hypotheses, bounded three-family resolver, and submission writer.
-It writes [final_submission.csv](./evaluation/results/final_submission.csv)
-and runs the public evaluator. The active policy is:
+It writes the full frame-aligned [final_submission.csv](./evaluation/results/final_submission.csv)
+from the supplied match data, and optionally runs the public evaluator. The
+active policy is:
 
 ```text
 raw tracking

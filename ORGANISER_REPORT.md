@@ -144,11 +144,16 @@ the final label should change*. A path hypothesis may suggest a deflection;
 the transition hypothesis asks whether ownership changed; only the resolver
 changes the final interval label.
 
-## 5. End-to-end pipeline and evaluation (08–09)
+## 5. End-to-end pipeline and evaluation (08–08b)
 
 The runner rebuilds the evidence table from the supplied raw tactical data and
 Smart Tags. It produces the same candidate labels and reports used in the
 notebooks; ground truth is read only by the evaluator after inference.
+The promoted output is written by `08_run_pipeline.ipynb`. The compact
+`08b_model_evaluation.ipynb` diagrams are retrospective case-discovery tools:
+they show where the evidence chain needs to discover a boundary or a handoff,
+not labels to copy into the runner. Alternative-policy comparisons are kept as
+optional audit material rather than part of the submission path.
 
 ```mermaid
 flowchart LR
