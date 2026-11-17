@@ -55,6 +55,7 @@ def build_observations(
     george_ballfill_path: str | Path | None = None,
     george_allow_model_filled: bool = False,
     george_evidence_only: bool = False,
+    george_minimum_observation_confidence: float | None = None,
 ) -> pd.DataFrame:
     """Build the complete shared observation/calculation table.
 
@@ -71,6 +72,7 @@ def build_observations(
         george_ballfill_path=george_ballfill_path,
         george_allow_model_filled=george_allow_model_filled,
         george_evidence_only=george_evidence_only,
+        george_minimum_observation_confidence=george_minimum_observation_confidence,
     )
 
 

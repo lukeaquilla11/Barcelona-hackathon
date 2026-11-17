@@ -225,6 +225,15 @@ def main() -> None:
         help="keep tactical coordinates unchanged; use George only as auxiliary evidence",
     )
     parser.add_argument(
+        "--minimum-confidence",
+        type=float,
+        default=None,
+        help=(
+            "optional source-independent George confidence gate for coordinate fill; "
+            "evidence columns remain available below the gate"
+        ),
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=ROOT / "evaluation/results/diagnostic_george_fused_observed_no_switch_interval.csv",
@@ -249,6 +258,7 @@ def main() -> None:
         george_ballfill_path=args.ballfill,
         george_allow_model_filled=args.allow_model_filled,
         george_evidence_only=args.evidence_only,
+        george_minimum_observation_confidence=args.minimum_confidence,
     )
     labels = build_current_best_labels(features, rules)
     model.write_submission(args.output, labels)

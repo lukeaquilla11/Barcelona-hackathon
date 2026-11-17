@@ -51,6 +51,7 @@ def build_engineered_features(
     george_ballfill_path: str | Path | None = None,
     george_allow_model_filled: bool = False,
     george_evidence_only: bool = False,
+    george_minimum_observation_confidence: float | None = None,
 ) -> pd.DataFrame:
     """Build the canonical frame table used by every model experiment.
 
@@ -74,6 +75,7 @@ def build_engineered_features(
             pitch_width_m=float(rules["pitch"]["width_m"]),
             allow_model_filled=george_allow_model_filled,
             fill_tactical_gaps=not george_evidence_only,
+            minimum_observation_confidence=george_minimum_observation_confidence,
         )
     temporal = add_temporal_features(features, rules)
     temporal = add_reachability_features(temporal, slot_team_map(paths["atd_meta"]), rules)

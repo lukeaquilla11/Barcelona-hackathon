@@ -218,3 +218,102 @@ def build_mislabel_audit(
         "summary": summary,
         "context_summary": context_summary,
     }
+
+
+def build_missing_ball_disagreement_audit(
+    ground_truth_path: str | Path,
+    prediction_path: str | Path,
+    features: pd.DataFrame,
+    output_path: str | Path,
+) -> dict[str, pd.DataFrame]:
+    """Measure how public disagreements overlap source-ball gaps.
+
+    This is an evaluation-only diagnostic.  It uses the public labels after
+    the candidate has been produced and never feeds the result back into the
+    feature, scenario, or resolver layers.  When George is attached, the
+    tactical coordinates are preferred for identifying the original gap, so a
+    filled coordinate cannot make the audit appear better merely by removing
+    the missingness flag.
+    """
+    ground_truth = pd.read_csv(ground_truth_path)
+    prediction = pd.read_csv(prediction_path)
+    required = {"frame", "label"}
+    if not required.issubset(ground_truth.columns) or not required.issubset(prediction.columns):
+        raise ValueError("ground truth and prediction must contain frame and label columns")
+    if len(ground_truth) != len(prediction) or not ground_truth["frame"].equals(prediction["frame"]):
+        raise ValueError("ground truth and prediction frame tables are not aligned")
+    if "frame" not in features:
+        raise ValueError("features must contain frame")
+
+    feature_frame = features.drop_duplicates("frame").set_index("frame")
+    frames = ground_truth["frame"].astype(int)
+    aligned = feature_frame.reindex(frames.to_numpy())
+    tactical_x = aligned["ball_x_tactical"] if "ball_x_tactical" in aligned else aligned.get("ball_x")
+    tactical_y = aligned["ball_y_tactical"] if "ball_y_tactical" in aligned else aligned.get("ball_y")
+    if tactical_x is None or tactical_y is None:
+        raise ValueError("features must contain ball_x/ball_y or tactical ball coordinates")
+    missing = pd.Series(
+        pd.to_numeric(tactical_x, errors="coerce").isna().to_numpy()
+        | pd.to_numeric(tactical_y, errors="coerce").isna().to_numpy(),
+        index=frames.to_numpy(),
+        name="ball_missing_source_gap",
+    )
+    if "ball_missing_observed" in aligned:
+        observed_missing = aligned["ball_missing_observed"].fillna(False).astype(bool).to_numpy()
+        missing = pd.Series(observed_missing | missing.to_numpy(), index=frames.to_numpy(), name=missing.name)
+
+    gt = ground_truth["label"].astype(str).str.upper().to_numpy()
+    pred = prediction["label"].astype(str).str.upper().to_numpy()
+    graded = gt != "X"
+    disagreement = graded & (gt != pred)
+    george_observed = aligned.get(
+        "ball_fill_observed_during_tactical_gap",
+        pd.Series(False, index=aligned.index),
+    ).fillna(False).astype(bool).to_numpy()
+    george_confidence = pd.to_numeric(
+        aligned.get("ball_fill_observation_confidence", pd.Series(np.nan, index=aligned.index)),
+        errors="coerce",
+    ).to_numpy()
+    audit = pd.DataFrame(
+        {
+            "frame": frames.to_numpy(),
+            "gt_label": gt,
+            "pred_label": pred,
+            "graded": graded,
+            "disagreement": disagreement,
+            "ball_missing_source_gap": missing.to_numpy(),
+            "george_observed_during_gap": george_observed,
+            "george_observation_confidence": george_confidence,
+        }
+    )
+    audit["error_type"] = audit["gt_label"] + "_TO_" + audit["pred_label"]
+    summary_rows = []
+    for name, mask in (
+        ("all_graded", graded),
+        ("ball_visible_graded", graded & ~missing.to_numpy()),
+        ("ball_missing_graded", graded & missing.to_numpy()),
+        ("george_observed_gap_graded", graded & george_observed),
+    ):
+        errors = disagreement & mask
+        summary_rows.append(
+            {
+                "population": name,
+                "frames": int(mask.sum()),
+                "disagreement_frames": int(errors.sum()),
+                "disagreement_rate": float(errors.sum() / mask.sum()) if mask.any() else np.nan,
+                "fraction_of_all_disagreements": float(errors.sum() / disagreement.sum()) if disagreement.any() else np.nan,
+            }
+        )
+    summary = pd.DataFrame(summary_rows)
+    by_error = (
+        audit[audit["disagreement"]]
+        .groupby(["error_type", "ball_missing_source_gap"], as_index=False)
+        .agg(frames=("frame", "size"))
+        .sort_values("frames", ascending=False)
+    )
+    output = Path(output_path)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    audit.to_csv(output.with_name(output.stem + "_frames.csv"), index=False)
+    summary.to_csv(output, index=False)
+    by_error.to_csv(output.with_name(output.stem + "_by_error.csv"), index=False)
+    return {"audit": audit, "summary": summary, "by_error": by_error}

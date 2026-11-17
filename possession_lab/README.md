@@ -60,14 +60,16 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
   evidence-only mode leaves tactical coordinates unchanged while exposing George's source,
   uncertainty, flight, and dead-ball observations to the missing-ball/scenario layers. This repo
   consumes George's precomputed CSV; generating it remains a separate George-branch video/alignment
-  workflow;
+  workflow. `minimum_observation_confidence` is an optional coordinate-fill gate: low-confidence
+  observations remain evidence but do not replace tactical coordinates;
 - [run_george_ballfill_experiment.py](./run_george_ballfill_experiment.py) — runs the current best
   visible-ball + NO_SWITCH resolver as a separate George-observation ablation and can compare the
   upstream motion/scenario signals against the no-George feature table. With the current local CSV
   it fills 16,140 tactical gaps, changes 7,751 final labels, and lowers the public score, so this
   remains an explicit coordinate-fill ablation rather than the promoted model. Use
   `--evidence-only` to test the safer source-aware observation path; it currently produces the
-  same labels as the no-George winner while changing missing-ball cause evidence on 7,647 frames;
+  same labels as the no-George winner while changing missing-ball cause evidence on 7,647 frames.
+  A selective `0.75` confidence gate fills 7,997 gaps and also ties the winner;
 - [run_interpolated_flight_experiment.py](./run_interpolated_flight_experiment.py) — the canonical
   full runner; pass `--george-ballfill /path/to/BAR-ATH_ball.csv` and optionally
   `--george-evidence-only` to place George observations at the start of the same

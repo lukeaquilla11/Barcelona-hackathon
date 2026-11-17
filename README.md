@@ -60,7 +60,10 @@ distance/speed/dead-ball Viterbi baseline. George's branch contributed a
 source-aware ball-observation/fill layer. George can now run in evidence-only
 mode: source, uncertainty, flight, and dead-ball observations are passed into
 the missing-ball/scenario layers without overwriting tactical coordinates. The
-coordinate-fill path remains a separately audited ablation. This repository
+coordinate-fill path remains a separately audited ablation. A selective fill
+gate can additionally require a predeclared George observation-confidence
+minimum before coordinates are allowed downstream; observations below that
+gate still remain available as uncertainty evidence. This repository
 consumes George's precomputed CSV; the alternate-video/alignment producer stays
 in George's branch. Kinson's branch contributed a
 homography-weighted HMM/Viterbi baseline and externally trained parameter ideas.
@@ -68,10 +71,11 @@ The safe integration boundary is observation-level: George can improve the ball
 input before feature construction, while Haiqal/Kinson outputs can only be
 bounded auxiliary evidence. Their final labels are never copied into the active
 resolver. Haiqal/Kinson bounded evidence tied the current best on the public
-slice. The actual local `data/ball/BAR-ATH_ball.csv` George ablation changed
-upstream observations but reduced the public result, so George remains an
-optional, separately evaluated observation layer rather than part of the
-promoted winner.
+slice. The actual local `data/ball/BAR-ATH_ball.csv` coordinate-fill ablation
+changed upstream observations but reduced the public result. Evidence-only and
+selective `0.75` confidence filling both tied the winner, so George remains an
+optional, separately evaluated observation layer rather than an unsupported
+possession-label override.
 
 `evidence_bounded_deadball` is an additional diagnostic policy: Smart Tagging
 provides restart context, while D is released only where a post-restart H/A

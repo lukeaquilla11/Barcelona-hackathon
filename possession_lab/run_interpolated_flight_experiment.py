@@ -181,6 +181,15 @@ def main() -> None:
         help="keep tactical coordinates unchanged; use George only as missing-ball/scenario evidence",
     )
     parser.add_argument(
+        "--george-minimum-confidence",
+        type=float,
+        default=None,
+        help=(
+            "optional George confidence gate for coordinate replacement; "
+            "does not suppress George auxiliary evidence"
+        ),
+    )
+    parser.add_argument(
         "--kinson-model",
         type=Path,
         default=None,
@@ -198,6 +207,7 @@ def main() -> None:
         george_ballfill_path=args.george_ballfill,
         george_allow_model_filled=args.george_allow_model_filled,
         george_evidence_only=args.george_evidence_only,
+        george_minimum_observation_confidence=args.george_minimum_confidence,
     )
     if args.george_ballfill is not None:
         print(f"George ball observations: {args.george_ballfill}")

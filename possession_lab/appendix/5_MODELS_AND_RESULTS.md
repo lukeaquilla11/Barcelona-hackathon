@@ -260,6 +260,26 @@ byte-identical labels to the current winner: Macro-F1 `0.8917`, Spell-F1 `0.6207
 F1@25 `0.4571`. This is useful even without a score gain: alternate-camera information is available
 to future scenario/transition rules without allowing it to manufacture a possession switch.
 
+The adapter also exposes a George-only motion audit (`ball_fill_displacement_m`,
+`ball_fill_speed_mps`, `ball_fill_distance_from_tactical_m`, and
+`ball_fill_speed_confidence`). These quantities answer where the alternate observation moves and
+how far it is from the tactical track; they are not treated as possession labels. A speed estimate
+is only useful for a transition when its endpoint observations are available and their confidence
+is retained alongside it.
+
+A selective coordinate experiment was also run with a predeclared George observation-confidence gate
+of `0.75`. It filled 7,997 gaps, changed upstream motion/scenario evidence, and produced the same
+public score and labels as the current winner (`0.8917 / 0.6207 / 0.4571`). This is the useful
+middle ground for a private-match ablation: confident observed George coordinates may inform speed,
+distance, and scenario construction, while weaker observations remain uncertainty evidence only.
+The gate is not a learned probability and is not fitted to the public labels.
+
+The evaluation-only missing-ball audit found 885 graded public frames with a source ball gap, but
+only 20 of the 820 disagreements occurred there (2.44% of disagreements). Most disagreements were
+visible-ball H/A or D-boundary errors. This is evidence against promoting a global ball-fill rewrite
+as the next score optimisation; the private run should retain the selective/evidence-only switch as
+a robustness diagnostic and prioritise contact/arrival evidence at visible transition boundaries.
+
 For completeness, enabling George's carrier-HMM `filled` source as a separate
 diagnostic filled 30,388 gaps and scored Macro-F1 `0.8796`, Spell-F1 `0.6069`,
 and Transition F1@25 `0.4000`. It is still below the reference and is more

@@ -69,6 +69,7 @@ def add_george_ballfill_observations(
     maximum_sigma_m: float | None = 4.0,
     allow_model_filled: bool = False,
     fill_tactical_gaps: bool = True,
+    minimum_observation_confidence: float | None = None,
 ) -> pd.DataFrame:
     """Attach George observations and optionally fill tactical ball gaps.
 
@@ -78,12 +79,19 @@ def add_george_ballfill_observations(
     George's carrier-HMM ``filled`` source must be requested explicitly so it
     cannot silently become a second possession decoder.
 
+    ``minimum_observation_confidence`` is an optional, predeclared gate for
+    coordinate replacement.  It is deliberately separate from the evidence
+    columns: a George observation can still inform missing-ball and transition
+    reasoning even when it is not trusted enough to become a ball coordinate.
+
     ``fill_tactical_gaps=False`` is the source-aware integration mode.  It
     keeps the tactical ball path untouched while exposing George's source,
     uncertainty, and missing-gap observations to later scenario and
     transition layers.  This is the preferred mode when George is being used
     as auxiliary evidence rather than as a replacement trajectory.
     """
+    if minimum_observation_confidence is not None and not 0.0 <= float(minimum_observation_confidence) <= 1.0:
+        raise ValueError("minimum_observation_confidence must be between 0 and 1")
     if "frame" not in frame_table or "ball_x" not in frame_table or "ball_y" not in frame_table:
         raise ValueError("frame_table must contain frame, ball_x, and ball_y")
     out = frame_table.copy()
@@ -112,6 +120,29 @@ def add_george_ballfill_observations(
     out["ball_fill_x"] = fill_x_m / float(pitch_length_m)
     out["ball_fill_y"] = fill_y_m / float(pitch_width_m)
     available = np.isfinite(fill_x_m) & np.isfinite(fill_y_m)
+    frame_values = index.to_numpy(dtype=int)
+    previous_available = np.concatenate(([False], available[:-1]))
+    consecutive_or_known_gap = np.concatenate(([False], frame_values[1:] > frame_values[:-1]))
+    fill_dx_m = np.full(len(out), np.nan, dtype=float)
+    fill_dy_m = np.full(len(out), np.nan, dtype=float)
+    fill_dx_m[1:] = fill_x_m[1:] - fill_x_m[:-1]
+    fill_dy_m[1:] = fill_y_m[1:] - fill_y_m[:-1]
+    fill_displacement_m = np.hypot(fill_dx_m, fill_dy_m)
+    fill_speed_mps = np.full(len(out), np.nan, dtype=float)
+    elapsed_s = np.full(len(out), np.nan, dtype=float)
+    elapsed_s[1:] = (frame_values[1:] - frame_values[:-1]) / 25.0
+    speed_valid = available & previous_available & consecutive_or_known_gap & (elapsed_s > 0.0)
+    fill_speed_mps[speed_valid] = fill_displacement_m[speed_valid] / elapsed_s[speed_valid]
+    out["ball_fill_displacement_m"] = fill_displacement_m
+    out["ball_fill_speed_mps"] = fill_speed_mps
+    tactical_x_m = out["ball_x_tactical"].to_numpy(float) * float(pitch_length_m)
+    tactical_y_m = out["ball_y_tactical"].to_numpy(float) * float(pitch_width_m)
+    tactical_distance_valid = available & np.isfinite(tactical_x_m) & np.isfinite(tactical_y_m)
+    out["ball_fill_distance_from_tactical_m"] = np.where(
+        tactical_distance_valid,
+        np.hypot(fill_x_m - tactical_x_m, fill_y_m - tactical_y_m),
+        np.nan,
+    )
     allowed = set(str(value) for value in allowed_sources)
     if allow_model_filled:
         allowed.add("filled")
@@ -156,12 +187,25 @@ def add_george_ballfill_observations(
         np.clip(source_quality, 0.0, 1.0),
         0.0,
     )
+    observation_confidence = out["ball_fill_observation_confidence"].to_numpy(float)
+    previous_confidence = np.concatenate(([0.0], observation_confidence[:-1]))
+    out["ball_fill_speed_confidence"] = np.where(
+        speed_valid,
+        np.minimum(observation_confidence, previous_confidence),
+        0.0,
+    )
     out["ball_fill_dead_probability"] = np.where(
         source_is_observed,
         np.clip(np.nan_to_num(out["ball_fill_p_dead"].to_numpy(float), nan=0.0), 0.0, 1.0),
         0.0,
     )
-    use_fill = tactical_missing & george_eligible & bool(fill_tactical_gaps)
+    confidence_gate = np.ones(len(out), dtype=bool)
+    if minimum_observation_confidence is not None:
+        confidence_gate = out["ball_fill_observation_confidence"].to_numpy(float) >= float(
+            minimum_observation_confidence
+        )
+    out["ball_fill_confidence_gate_pass"] = george_eligible & confidence_gate
+    use_fill = tactical_missing & george_eligible & confidence_gate & bool(fill_tactical_gaps)
     out["ball_filled_from_george"] = use_fill
     out.loc[use_fill, "ball_x"] = out.loc[use_fill, "ball_fill_x"]
     out.loc[use_fill, "ball_y"] = out.loc[use_fill, "ball_fill_y"]
