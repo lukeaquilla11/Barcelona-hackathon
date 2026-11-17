@@ -41,26 +41,24 @@ SOURCE_CLASS_MODEL = "model_imputation"
 SOURCE_CLASS_UNTRUSTED = "untrusted_or_metadata"
 
 
-def load_george_ballfill(path: str | Path, n_frames: int) -> pd.DataFrame:
-    """Load and validate a George ball-fill CSV on the tactical frame index.
+def _validate_george_ballfill_table(table: pd.DataFrame, n_frames: int, source_name: str) -> pd.DataFrame:
+    """Validate an in-memory George observation table on the tactical frame index.
 
     George stores coordinates in metres.  Validation is intentionally strict:
     a frame shift would manufacture motion and could look like a useful
     transition signal while actually corrupting every downstream feature.
     """
-    source_path = Path(path)
-    table = pd.read_csv(source_path)
     required = {"frame", "x", "y", "source"}
     missing = sorted(required - set(table.columns))
     if missing:
-        raise ValueError(f"{source_path}: missing George columns {missing}")
+        raise ValueError(f"{source_name}: missing George columns {missing}")
     frames = pd.to_numeric(table["frame"], errors="coerce")
     if frames.isna().any() or not np.equal(frames, frames.astype(int)).all():
-        raise ValueError(f"{source_path}: frame must contain integer values")
+        raise ValueError(f"{source_name}: frame must contain integer values")
     if table["frame"].duplicated().any():
-        raise ValueError(f"{source_path}: duplicate frame rows")
+        raise ValueError(f"{source_name}: duplicate frame rows")
     if ((frames < 0) | (frames >= n_frames)).any():
-        raise ValueError(f"{source_path}: frame outside 0..{n_frames - 1}")
+        raise ValueError(f"{source_name}: frame outside 0..{n_frames - 1}")
     out = table.copy()
     out["frame"] = frames.astype(int)
     for column in ("x", "y", "sigma_m", "gap_s", "p_video", "p_carrier", "p_dead"):
@@ -70,9 +68,17 @@ def load_george_ballfill(path: str | Path, n_frames: int) -> pd.DataFrame:
     return out
 
 
+def load_george_ballfill(path: str | Path, n_frames: int) -> pd.DataFrame:
+    """Load and validate a George ball-fill CSV on the tactical frame index."""
+    source_path = Path(path)
+    return _validate_george_ballfill_table(
+        pd.read_csv(source_path), n_frames, str(source_path)
+    )
+
+
 def add_george_ballfill_observations(
     frame_table: pd.DataFrame,
-    ballfill_path: str | Path,
+    ballfill_path: str | Path | None = None,
     *,
     pitch_length_m: float = 105.3,
     pitch_width_m: float = 68.0,
@@ -81,6 +87,7 @@ def add_george_ballfill_observations(
     allow_model_filled: bool = False,
     fill_tactical_gaps: bool = True,
     minimum_observation_confidence: float | None = None,
+    ballfill_table: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     """Attach George observations and optionally fill tactical ball gaps.
 
@@ -105,6 +112,8 @@ def add_george_ballfill_observations(
     transition layers.  This is the preferred mode when George is being used
     as auxiliary evidence rather than as a replacement trajectory.
     """
+    if (ballfill_path is None) == (ballfill_table is None):
+        raise ValueError("provide exactly one of ballfill_path or ballfill_table")
     if minimum_observation_confidence is not None and not 0.0 <= float(minimum_observation_confidence) <= 1.0:
         raise ValueError("minimum_observation_confidence must be between 0 and 1")
     if "frame" not in frame_table or "ball_x" not in frame_table or "ball_y" not in frame_table:
@@ -117,7 +126,12 @@ def add_george_ballfill_observations(
     # is warning-free on current and future pandas versions.
     out["ball_x"] = out["ball_x_tactical"].astype(float)
     out["ball_y"] = out["ball_y_tactical"].astype(float)
-    fill = load_george_ballfill(ballfill_path, len(out)).set_index("frame")
+    if ballfill_table is None:
+        fill = load_george_ballfill(ballfill_path, len(out)).set_index("frame")
+    else:
+        fill = _validate_george_ballfill_table(
+            ballfill_table.copy(), len(out), "George observation dataframe"
+        ).set_index("frame")
     index = pd.Index(pd.to_numeric(out["frame"], errors="raise").astype(int), name="frame")
 
     # Reindexing leaves frames outside George's output as pandas ``<NA>``.

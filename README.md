@@ -60,7 +60,9 @@ for the richer physics-veto policy.
 
 Haiqal's branch contributed reusable windowed evidence and a raw
 distance/speed/dead-ball Viterbi baseline, which remain comparison material.
-George's branch contributed the source-aware ball-observation layer. Its
+George's branch contributed the source-aware ball-observation layer. The vendored
+`ballfill/` package now exposes its raw-video detector, verifier, carrier/dead-ball
+HMM, and fused observation runner. Its
 flight rows now expose displacement, direction, cumulative travel, and a
 landing-boundary candidate for long-ball analysis. When enabled, those
 observations can affect continuity only inside a tactical missing-ball gap;
@@ -70,8 +72,11 @@ organiser-facing missing-ball walkthrough is
 [04b_ball_missing_player_analysis.ipynb](./notebooks/04b_ball_missing_player_analysis.ipynb):
 it explains George's alternate-camera sources, uncertainty, derived speed and
 displacement, and why those observations must be checked before they influence
-scenarios or transitions. This repository consumes George's precomputed CSV;
-the alternate-video/alignment producer stays in George's branch.
+scenarios or transitions. The raw-data walkthrough and callable stage are in
+[04c_george_ballfill_pipeline.ipynb](./notebooks/04c_george_ballfill_pipeline.ipynb) and
+[george_ballfill_stage.py](./possession_lab/george_ballfill_stage.py). The generated ball CSV is
+only an audit artifact; the canonical runner can call the stage internally with
+`--run-george-from-raw`.
 
 Kinson's fitted classifier and Viterbi decoder are not part of the promoted
 pipeline. They were trained/tuned against event-derived labels, so they remain

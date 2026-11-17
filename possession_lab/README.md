@@ -8,12 +8,13 @@ The active implementation is the shared evidence table and runner in this folder
 3. [03_scenario_engineering.ipynb](../notebooks/03_scenario_engineering.ipynb) — combine observations into scenario evidence and case studies.
 4. [04_deadball_setpieces.ipynb](../notebooks/04_deadball_setpieces.ipynb) — study restart boundaries.
 5. [04b_ball_missing_player_analysis.ipynb](../notebooks/04b_ball_missing_player_analysis.ipynb) — inspect missing-ball and missing-player cases.
-6. [05_anchors_rulebook.ipynb](../notebooks/05_anchors_rulebook.ipynb) — define stable H/A/D evidence.
-7. [06_transition_markers.ipynb](../notebooks/06_transition_markers.ipynb) — resolve transition windows conservatively.
-8. [07_probability_transition_model.ipynb](../notebooks/07_probability_transition_model.ipynb) — test normalized evidence and decoder hypotheses.
-9. [08_run_pipeline.ipynb](../notebooks/08_run_pipeline.ipynb) — run the organiser-facing candidate.
-10. [08_model_evaluation.ipynb](../notebooks/08_model_evaluation.ipynb) — score and inspect disagreement intervals.
-11. [09_experimental_results.ipynb](../notebooks/09_experimental_results.ipynb) — compare final representatives.
+6. [04c_george_ballfill_pipeline.ipynb](../notebooks/04c_george_ballfill_pipeline.ipynb) — run George's raw-data ball-observation stage.
+7. [05_anchors_rulebook.ipynb](../notebooks/05_anchors_rulebook.ipynb) — define stable H/A/D evidence.
+8. [06_transition_markers.ipynb](../notebooks/06_transition_markers.ipynb) — resolve transition windows conservatively.
+9. [07_probability_transition_model.ipynb](../notebooks/07_probability_transition_model.ipynb) — test normalized evidence and decoder hypotheses.
+10. [08_run_pipeline.ipynb](../notebooks/08_run_pipeline.ipynb) — run the organiser-facing candidate.
+11. [08_model_evaluation.ipynb](../notebooks/08_model_evaluation.ipynb) — score and inspect disagreement intervals.
+12. [09_experimental_results.ipynb](../notebooks/09_experimental_results.ipynb) — compare final representatives.
 
 The path is deliberately **Problem → Idea → Construction → Pipeline → Evaluation**. The notebooks are clients of this package; they should not duplicate the implementation.
 
@@ -66,8 +67,9 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
   feature builder also exposes a non-additive path-fusion audit: George direct observation,
   then George flight reconstruction, then a short low-uncertainty Kalman path. Agreement and
   disagreement are recorded separately, so correlated paths are not double-counted. This repo
-  consumes George's precomputed CSV; generating it remains a separate George-branch video/alignment
-  workflow. `minimum_observation_confidence` is an optional coordinate-fill gate: low-confidence
+  accepts either a generated table or CSV. The raw-data producer is exposed through
+  [george_ballfill_stage.py](./george_ballfill_stage.py), so the canonical notebook can generate
+  the table internally. `minimum_observation_confidence` is an optional coordinate-fill gate: low-confidence
   observations remain evidence but do not replace tactical coordinates;
 - [run_george_ballfill_experiment.py](./run_george_ballfill_experiment.py) — runs the current best
   visible-ball + NO_SWITCH resolver as a separate George-observation ablation and can compare the
@@ -77,10 +79,13 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
   `--evidence-only` to test the safer source-aware observation path; it currently produces the
   same labels as the no-George winner while changing missing-ball cause evidence on 7,647 frames.
   A selective `0.75` confidence gate fills 7,997 gaps and also ties the winner;
+- [george_ballfill_stage.py](./george_ballfill_stage.py) — runs George's raw-video detector,
+  verifier, carrier/dead-ball HMM, and returns its generated frame-level observation table for
+  downstream feature construction;
 - [run_interpolated_flight_experiment.py](./run_interpolated_flight_experiment.py) — the canonical
-  full runner; pass `--george-ballfill /path/to/BAR-ATH_ball.csv` and optionally
-  `--george-evidence-only` to place George observations at the start of the same
-  feature/scenario/anchor/transition pipeline;
+  full runner; pass `--run-george-from-raw --george-data-dir /path/to/data` to create George's
+  observations internally, or pass `--george-ballfill` only for an explicit generated-table
+  ablation. `--george-evidence-only` keeps tactical coordinates primary;
 - `diagnostic_forward_settling_dead_ball` — the promoted full-length candidate. It applies
   terminal-flight speed drop, future player settling, and receiver separation after the
   `NO_SWITCH` resolver, so D can begin near the evidence boundary instead of waiting for a

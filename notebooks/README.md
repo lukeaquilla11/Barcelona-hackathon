@@ -8,12 +8,13 @@ Read the notebooks in this order. The sequence follows **Problem → Idea → Co
 3. [03_scenario_engineering.ipynb](./03_scenario_engineering.ipynb) — dead ball, control, flight, reception, long-ball and contested scenarios.
 4. [04_deadball_setpieces.ipynb](./04_deadball_setpieces.ipynb) — focused restart boundary study for goal kicks, free kicks, corners, throw-ins, and kickoffs.
 5. [04b_ball_missing_player_analysis.ipynb](./04b_ball_missing_player_analysis.ipynb) — the dedicated George missing-ball observation walkthrough: alternate-camera sources, uncertainty, derived motion, case diagrams, and safe downstream use.
-6. [05_anchors_rulebook.ipynb](./05_anchors_rulebook.ipynb) — observable evidence for easy H/A/D anchors.
-7. [06_transition_markers.ipynb](./06_transition_markers.ipynb) — dead-ball/restart handling, transition windows, and unresolved contest evidence.
-8. [07_probability_transition_model.ipynb](./07_probability_transition_model.ipynb) — normalized observation evidence, explicit no-switch/contested transition hypotheses, interval resolution, and optional Viterbi/HSMM roles.
-9. [08_run_pipeline.ipynb](./08_run_pipeline.ipynb) — organiser-facing execution of the best visible-ball candidate.
-10. [08_model_evaluation.ipynb](./08_model_evaluation.ipynb) — public five-minute scoring and every disagreement-window diagnostic.
-11. [09_experimental_results.ipynb](./09_experimental_results.ipynb) — toggleable model reruns, final representatives, provided baselines, and ranked comparison.
+6. [04c_george_ballfill_pipeline.ipynb](./04c_george_ballfill_pipeline.ipynb) — run George's raw-data detector, verifier, and carrier/dead-ball HMM as an observation stage.
+7. [05_anchors_rulebook.ipynb](./05_anchors_rulebook.ipynb) — observable evidence for easy H/A/D anchors.
+8. [06_transition_markers.ipynb](./06_transition_markers.ipynb) — dead-ball/restart handling, transition windows, and unresolved contest evidence.
+9. [07_probability_transition_model.ipynb](./07_probability_transition_model.ipynb) — normalized observation evidence, explicit no-switch/contested transition hypotheses, interval resolution, and optional Viterbi/HSMM roles.
+10. [08_run_pipeline.ipynb](./08_run_pipeline.ipynb) — organiser-facing execution of the best visible-ball candidate.
+11. [08_model_evaluation.ipynb](./08_model_evaluation.ipynb) — public five-minute scoring and every disagreement-window diagnostic.
+12. [09_experimental_results.ipynb](./09_experimental_results.ipynb) — toggleable model reruns, final representatives, provided baselines, and ranked comparison.
 
 Use that same template when presenting a result:
 
@@ -87,7 +88,7 @@ nearest-team observations, selected anchors, scenario markers, missing-ball inte
 optional public ground-truth strip. Notebooks select the case window; they do not reimplement the
 plotting logic.
 
-The modelling distinction is deliberate: `H`, `A`, and `D` are the hidden possession states. Scenario names such as `CONTROLLED`, `CONTESTED`, `BALL_IN_FLIGHT`, `LONG_BALL`, and `RESTART` describe observable evidence. The decoder maps those observations to confidence over the hidden states; scenarios are not extra labels. George's ball-fill output, when available, is another source of observations with uncertainty—not a second set of possession labels.
+The modelling distinction is deliberate: `H`, `A`, and `D` are the hidden possession states. Scenario names such as `CONTROLLED`, `CONTESTED`, `BALL_IN_FLIGHT`, `LONG_BALL`, and `RESTART` describe observable evidence. The decoder maps those observations to confidence over the hidden states; scenarios are not extra labels. George's raw-data ballfill stage, when enabled, is another source of observations with uncertainty—not a second set of possession labels.
 
 ## Implementation
 

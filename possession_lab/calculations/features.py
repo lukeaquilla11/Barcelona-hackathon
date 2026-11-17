@@ -53,6 +53,7 @@ def build_engineered_features(
     model: ClosestTeamRuleModel | None = None,
     rules: dict[str, Any] | None = None,
     george_ballfill_path: str | Path | None = None,
+    george_ballfill_table: pd.DataFrame | None = None,
     george_allow_model_filled: bool = False,
     george_evidence_only: bool = False,
     george_minimum_observation_confidence: float | None = None,
@@ -71,7 +72,7 @@ def build_engineered_features(
     # private organiser data directory rather than relying on the process-wide
     # MTAH_DATA_DIR default.
     paths = asset_paths(game=model.game, data_dir=model.data_dir)
-    if george_ballfill_path is not None:
+    if george_ballfill_path is not None or george_ballfill_table is not None:
         features = add_george_ballfill_observations(
             features,
             george_ballfill_path,
@@ -80,6 +81,7 @@ def build_engineered_features(
             allow_model_filled=george_allow_model_filled,
             fill_tactical_gaps=not george_evidence_only,
             minimum_observation_confidence=george_minimum_observation_confidence,
+            ballfill_table=george_ballfill_table,
         )
     temporal = add_temporal_features(features, rules)
     temporal = add_reachability_features(temporal, slot_team_map(paths["atd_meta"]), rules)

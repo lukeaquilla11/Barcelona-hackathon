@@ -1,6 +1,7 @@
 """Run the full observation-first possession experiment."""
 
 import argparse
+import os
 from pathlib import Path
 
 import numpy as np
@@ -170,6 +171,17 @@ def main() -> None:
         help="optional George fused ball CSV; attaches source-aware observations before features/scenarios",
     )
     parser.add_argument(
+        "--run-george-from-raw",
+        action="store_true",
+        help="run George's raw-video observation stage and pass its generated dataframe downstream",
+    )
+    parser.add_argument(
+        "--george-data-dir",
+        type=Path,
+        default=None,
+        help="raw match bundle used by --run-george-from-raw; defaults to the model data directory",
+    )
+    parser.add_argument(
         "--george-allow-model-filled",
         action="store_true",
         help="also accept George's carrier-HMM 'filled' source (diagnostic only)",
@@ -190,11 +202,26 @@ def main() -> None:
     )
     args = parser.parse_args()
     rules = load_rules()
-    model = ClosestTeamRuleModel()
+    model = ClosestTeamRuleModel(data_dir=args.george_data_dir)
+    george_table = None
+    if args.run_george_from_raw:
+        if args.george_ballfill is not None:
+            parser.error("--run-george-from-raw and --george-ballfill are mutually exclusive")
+        from possession_lab.george_ballfill_stage import build_george_observations_from_raw
+
+        george_data_dir = args.george_data_dir or model.data_dir or os.environ.get(
+            "MTAH_DATA_DIR", ROOT / "data"
+        )
+        george_table = build_george_observations_from_raw(
+            data_dir=george_data_dir,
+            game=model.game,
+        )
+        print(f"George raw observation stage: {len(george_table):,} rows")
     temporal = build_engineered_features(
         model=model,
         rules=rules,
         george_ballfill_path=args.george_ballfill,
+        george_ballfill_table=george_table,
         george_allow_model_filled=args.george_allow_model_filled,
         george_evidence_only=args.george_evidence_only,
         george_minimum_observation_confidence=args.george_minimum_confidence,
