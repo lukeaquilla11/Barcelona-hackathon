@@ -151,7 +151,7 @@ Smart Tags. It produces the same candidate labels and reports used in the
 notebooks; ground truth is read only by the evaluator after inference.
 
 ```mermaid
-flowchart TD
+flowchart LR
     R[Raw tactical tracking<br/>+ Smart Tagging context]
     F[Physical and missing-ball features<br/>speed · direction · arrival · pressure · activity]
     S[Football scenarios<br/>controlled · flight · contested · restart · dead]

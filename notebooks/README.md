@@ -16,9 +16,10 @@ scenarios → anchors → transition hypotheses → final submission → audit**
 11. [08_model_evaluation.ipynb](./08_model_evaluation.ipynb) — inspect public scores and disagreement windows.
 12. [09_experimental_results.ipynb](./09_experimental_results.ipynb) — keep the alternative-method comparison auditable.
 
-The optional source studies are in [appendix/](./appendix/): George's
-alternate-camera observation pipeline and the independent distance/speed
-observation baseline. They are not silently merged into the final labels.
+The optional source studies are in [appendix/](./appendix/):
+[04c_alternate_ball_observations.ipynb](./appendix/04c_alternate_ball_observations.ipynb)
+and [05_independent_observation_baseline.ipynb](./appendix/05_independent_observation_baseline.ipynb).
+They are not silently merged into the final labels.
 
 Every notebook calls modular functions from [../possession_lab/](../possession_lab/).
 The canonical command is:
