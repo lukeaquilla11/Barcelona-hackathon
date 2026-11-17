@@ -114,7 +114,8 @@ def build_mislabel_audit(
 
     context_specs = [
         (scenario_path, [
-            "scenario_context", "scenario_context_causal", "scenario_state",
+            "scenario_context_observation", "scenario_context", "scenario_context_causal",
+            "scenario_context_anchor_refined", "scenario_state",
             "scenario_confidence", "scenario_margin", "state_score_DEAD_BALL",
             "state_score_H_CONTROL", "state_score_A_CONTROL", "state_score_CONTESTED",
             "transition_hypothesis_state", "transition_trust_score",

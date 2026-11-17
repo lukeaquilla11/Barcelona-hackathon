@@ -289,6 +289,29 @@ Reproduce it with `run_george_ballfill_experiment.py --compare-baseline`, or pas
 `--george-ballfill` to the canonical full runner. The feature audit is kept separate from the
 label score so an upstream signal improvement cannot be mistaken for a ground-truth gain.
 
+### Tuning policy for the layered pipeline
+
+Only parameters that describe measurement quality or physically meaningful
+evidence windows should be sensitivity-tested. The current public slice is too
+short to safely fit a large decoder grid: it has only 17 graded possessions.
+The George confidence gates `0.75` and `0.85` were tested as predeclared
+quality sensitivities; both tied the reference public labels and score. They
+are therefore robustness options, not learned hyperparameters.
+
+The remaining high-value tuning targets are:
+
+- contact/arrival windows and persistence duration, validated on additional
+  reviewed matches or a declared holdout;
+- restart activation windows, split by restart type rather than one global D
+  duration;
+- uncertainty and source-quality limits for alternate-camera ball evidence;
+- resolver conservatism, reported with spell and transition metrics together.
+
+Switch costs, dead-ball costs, and probability temperatures should not be
+optimised directly on the five-minute labels. They are model parameters whose
+values must come from reviewed multi-match calibration, silver-label
+cross-validation, or remain fixed as transparent football priors.
+
 ### Explicit transition-channel composition (tested, not promoted)
 
 The next structural experiment made the transition equation explicit instead of adding another

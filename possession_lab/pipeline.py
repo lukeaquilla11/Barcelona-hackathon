@@ -1,10 +1,16 @@
 """Stable orchestration wrappers for the modular possession pipeline.
 
-The lower-level modules remain independently testable.  This facade gives
+The lower-level modules remain independently testable. This facade gives
 notebooks, organiser scripts, and future models one consistent boundary:
 
-    load data -> observations/calculations -> scenario evidence ->
-    probability/transition evidence -> selected resolver -> H/A/D/X labels
+    load data -> source-aware ball observations -> feature engineering ->
+    base scenarios -> restart/dead-ball evidence -> anchors ->
+    transition hypotheses -> interval resolver -> optional sequence smoother ->
+    H/A/D/X labels
+
+The feature builder keeps a base scenario pass separate from its
+anchor-informed refinement. This is intentional: scenarios describe observed
+football context, while anchors and resolvers decide ownership.
 
 No function in this module reads public ground truth during construction.
 Ground truth belongs only to the evaluator and error-audit notebooks.
@@ -56,17 +62,21 @@ def build_observations(
     george_allow_model_filled: bool = False,
     george_evidence_only: bool = False,
     george_minimum_observation_confidence: float | None = None,
+    include_haiqal_observations: bool = False,
 ) -> pd.DataFrame:
     """Build the complete shared observation/calculation table.
 
     ``george_evidence_only=True`` preserves the tactical ball trajectory and
     exposes George's source/uncertainty observations to downstream scenarios
-    and transition hypotheses.  It is the safe integration mode for the
-    reference model; coordinate filling remains available as an explicit
-    ablation.
+    and transition hypotheses.  ``include_haiqal_observations=True`` attaches
+    Haiqal's raw closeness/speed/dead-ball clues to the same observation table;
+    they remain bounded evidence and never become labels. The feature layer
+    performs a base scenario pass before anchors and an anchor-refined pass
+    afterward. It is the safe integration mode for the reference model;
+    coordinate filling remains an explicit ablation.
     """
     resolved_model = model or ClosestTeamRuleModel(game=game, data_dir=data_dir)
-    return build_engineered_features(
+    observations = build_engineered_features(
         model=resolved_model,
         rules=rules,
         george_ballfill_path=george_ballfill_path,
@@ -74,6 +84,13 @@ def build_observations(
         george_evidence_only=george_evidence_only,
         george_minimum_observation_confidence=george_minimum_observation_confidence,
     )
+    if include_haiqal_observations:
+        observations = add_haiqal_observations(
+            observations,
+            game=resolved_model.game,
+            data_dir=resolved_model.data_dir,
+        )
+    return observations
 
 
 def detect_scenario_evidence(

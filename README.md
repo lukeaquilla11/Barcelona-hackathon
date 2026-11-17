@@ -77,6 +77,12 @@ selective `0.75` confidence filling both tied the winner, so George remains an
 optional, separately evaluated observation layer rather than an unsupported
 possession-label override.
 
+The canonical feature builder uses a two-pass scenario detector. A base scenario
+pass consumes ball/player motion, visibility, restart context, and missing-ball
+causes before anchors. Reception and anchor evidence then refine the scenario
+context. This avoids a circular rule in which an ownership decision creates the
+scenario that supposedly justified that same decision.
+
 `evidence_bounded_deadball` is an additional diagnostic policy: Smart Tagging
 provides restart context, while D is released only where a post-restart H/A
 control anchor is visible. It does not impose a fixed dead-ball duration.
