@@ -1175,6 +1175,31 @@ def main() -> None:
         index=False,
     )
     print(transition_ledger_output)
+    role_columns = [
+        "frame", "transition_role_state", "transition_role_reason",
+        "contact_anchor", "contact_anchor_score", "contact_anchor_team_candidate",
+        "switch_hypothesis", "switch_hypothesis_team",
+        "control_anchor", "control_anchor_team", "control_anchor_confidence",
+        "restart_pending", "restart_activation", "restart_activation_team",
+        "restart_long_ball_activation", "long_ball_initiating_team",
+        "long_ball_initiating_anchor", "long_ball_initiating_confidence",
+        "dead_hold_candidate", "transition_boundary_kind",
+        "transition_hypothesis_state", "transition_hypothesis_p_no_switch",
+        "scenario_context_causal", "selected_anchor_team", "selected_anchor_confidence",
+    ]
+    role_frame = scored_features.loc[:, [column for column in role_columns if column in scored_features.columns]]
+    role_output = ROOT / "evaluation" / "reports" / "transition_role_evidence.csv"
+    role_frame.to_csv(role_output, index=False)
+    role_summary = (
+        role_frame.get("transition_role_state", pd.Series(dtype=object))
+        .value_counts(dropna=False)
+        .rename_axis("transition_role_state")
+        .reset_index(name="frames")
+    )
+    role_summary_output = ROOT / "evaluation" / "reports" / "transition_role_summary.csv"
+    role_summary.to_csv(role_summary_output, index=False)
+    print(role_output)
+    print(role_summary_output)
     public_transition_audit_output = ROOT / "evaluation" / "reports" / "transition_public_error_audit.csv"
     public_transition_summary_output = ROOT / "evaluation" / "reports" / "transition_public_error_summary.csv"
     write_public_transition_error_audit(

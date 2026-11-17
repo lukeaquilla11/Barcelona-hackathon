@@ -2414,6 +2414,214 @@ def add_transition_boundary_hypotheses(features: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def add_transition_role_evidence(features: pd.DataFrame) -> pd.DataFrame:
+    """Expose the distinct roles used around a possession boundary.
+
+    The same observation must not answer four different questions.  A sharp
+    ball-motion change can be evidence of contact, but it is not by itself a
+    possession switch.  A restart can make play live, but the team that takes
+    a long ball is not necessarily the team that controls its landing.  This
+    layer therefore emits auditable evidence roles without overwriting H/A/D:
+
+    ``CONTACT_ANCHOR``
+        Something happened to the ball (contact, deceleration, or a robust
+        direction change).
+    ``SWITCH_HYPOTHESIS``
+        The interval resolver should test whether that contact changed team.
+    ``CONTROL_ANCHOR``
+        A team-level anchor has enough persistence/confidence to confirm
+        ownership.
+    ``RESTART_ACTIVATION``
+        A restart is physically live again; context or player repositioning
+        alone is not sufficient.
+    ``D_HOLD``
+        Stoppage evidence remains active and neither restart activation nor
+        control has resolved the boundary yet.
+
+    The function is deliberately label-free.  In particular, a long-ball
+    origin is retained as a continuity/initiator signal during flight, while
+    landing ownership remains a separate control question.
+    """
+    out = features.copy()
+    n = len(out)
+
+    def numeric(name: str, default: float = 0.0) -> np.ndarray:
+        return pd.to_numeric(
+            out.get(name, pd.Series(default, index=out.index)), errors="coerce"
+        ).fillna(default).to_numpy(float)
+
+    def boolean(name: str) -> np.ndarray:
+        return out.get(name, pd.Series(False, index=out.index)).fillna(False).to_numpy(bool)
+
+    def teams(name: str) -> np.ndarray:
+        values = out.get(name, pd.Series(None, index=out.index, dtype=object)).to_numpy(object)
+        return np.where(np.isin(values, ["H", "A"]), values, None)
+
+    direction = np.maximum(
+        np.clip(numeric("ball_direction_change_rad") / 1.2, 0.0, 1.0),
+        np.clip(numeric("ball_direction_change_roll_max_rad") / 1.2, 0.0, 1.0),
+    )
+    deceleration = np.clip(
+        numeric("reception_ball_deceleration_mps") / 4.0, 0.0, 1.0
+    )
+    contact_change = np.maximum(direction, deceleration)
+    kick_contact = np.clip(numeric("kick_episode_contact_change"), 0.0, 1.0)
+    reception_signal = np.maximum(
+        np.clip(numeric("reception_score_H"), 0.0, 1.0),
+        np.clip(numeric("reception_score_A"), 0.0, 1.0),
+    )
+    # Contact evidence is intentionally more permissive than ownership.  It
+    # is the observation that opens a switch question, not the answer to it.
+    contact_anchor = (
+        (contact_change >= 0.25)
+        | (kick_contact >= 0.25)
+        | boolean("soft_reception_event_candidate")
+        | (reception_signal >= 0.40)
+    )
+    contact_score = np.clip(
+        np.maximum.reduce([contact_change, kick_contact, reception_signal]), 0.0, 1.0
+    )
+
+    hypothesis_state = out.get(
+        "transition_hypothesis_state", pd.Series("NO_SWITCH", index=out.index)
+    ).fillna("NO_SWITCH").astype(str).to_numpy(object)
+    boundary_kind = out.get(
+        "transition_boundary_kind", pd.Series("NONE", index=out.index)
+    ).fillna("NONE").astype(str).to_numpy(object)
+    candidate_team = teams("transition_candidate_team")
+    switch_hypothesis = (hypothesis_state == "SWITCH_CANDIDATE") | np.isin(
+        boundary_kind, ["H_TO_A", "A_TO_H"]
+    )
+    switch_team = np.where(
+        np.isin(candidate_team, ["H", "A"]),
+        candidate_team,
+        teams("transition_after_anchor_team"),
+    )
+
+    selected_team = teams("selected_anchor_team")
+    selected_confidence = np.clip(
+        numeric("selected_anchor_confidence", np.nan), 0.0, 1.0
+    )
+    anchor_team = teams("anchor_team")
+    anchor_confidence = np.clip(numeric("anchor_confidence_score", 0.0), 0.0, 1.0)
+    control_team = np.where(
+        selected_confidence >= 0.85,
+        selected_team,
+        np.where(anchor_confidence >= 0.85, anchor_team, None),
+    )
+    control_anchor = np.isin(control_team, ["H", "A"])
+    control_confidence = np.maximum(
+        np.where(control_anchor, selected_confidence, 0.0),
+        np.where(np.isin(anchor_team, ["H", "A"]), anchor_confidence, 0.0),
+    )
+    # A short touch can be a valid switch hypothesis even when control is not
+    # yet established.  The resolver must keep it contested until persistence.
+    controlled_reception = (
+        boolean("controlled_reception_signal")
+        | (numeric("controlled_reception_signal_score", 0.0) >= 0.55)
+        | (np.maximum(
+            numeric("post_control_score_H", 0.0),
+            numeric("post_control_score_A", 0.0),
+        ) >= 0.55)
+    )
+    out["control_anchor"] = control_anchor & controlled_reception
+    out["control_anchor_team"] = np.where(
+        out["control_anchor"].to_numpy(bool), control_team, None
+    )
+    out["control_anchor_confidence"] = np.where(
+        out["control_anchor"].to_numpy(bool), control_confidence, 0.0
+    )
+
+    restart_context = boolean("restart_context") | boolean("smart_set_piece")
+    restart_physical = boolean("restart_ball_active") | boolean("restart_live_boundary_anchor")
+    restart_control = (
+        boolean("restart_confirmed_anchor")
+        | boolean("restart_hinted_control_anchor")
+        | boolean("restart_fallback_control_anchor")
+    )
+    restart_activation = restart_context & restart_physical
+    restart_team = teams("restart_control_anchor_team")
+    restart_team = np.where(
+        np.isin(restart_team, ["H", "A"]), restart_team, selected_team
+    )
+
+    flight_origin_team = teams("flight_origin_anchor_team")
+    flight_origin_active = boolean("flight_origin_anchor_active")
+    flight_origin_confidence = np.clip(
+        numeric("flight_origin_anchor_confidence", 0.0), 0.0, 1.0
+    )
+    kick_long_ball = boolean("kick_episode_long_ball_candidate")
+    long_ball_initiating = flight_origin_active | kick_long_ball
+    long_ball_team = flight_origin_team.copy()
+    # For ordinary visible long-ball episodes, recover the initiating team
+    # from the last valid anchor before the kick.  This is a continuity
+    # feature, not a new owner label and never uses the public labels.
+    for position in np.flatnonzero(kick_long_ball & ~np.isin(long_ball_team, ["H", "A"])):
+        prior = position - 1
+        while prior >= 0 and anchor_team[prior] not in {"H", "A"}:
+            prior -= 1
+        if prior >= 0:
+            long_ball_team[position] = anchor_team[prior]
+    long_ball_confidence = np.where(
+        flight_origin_active,
+        flight_origin_confidence,
+        np.where(np.isin(long_ball_team, ["H", "A"]), np.maximum(anchor_confidence, 0.5), 0.0),
+    )
+    restart_long_ball_activation = restart_activation & long_ball_initiating
+
+    scenario = out.get(
+        "scenario_context_causal", out.get("scenario_context", pd.Series("UNKNOWN", index=out.index))
+    ).fillna("UNKNOWN").astype(str).to_numpy(object)
+    low_activity = numeric("player_activity_p90_mps", np.inf) <= 0.45
+    dead_context = (
+        (scenario == "DEAD")
+        | boolean("ball_out_of_play_anchor")
+        | boolean("low_motion_dead_ball_anchor")
+        | (boundary_kind == "H_TO_D")
+        | (boundary_kind == "A_TO_D")
+    )
+    # Unknown/occluded frames are held only when the surrounding scene is
+    # still, not merely because the ball is missing.  A flight origin or a
+    # restart activation is an explicit escape from this hold candidate.
+    hold_context = dead_context | ((scenario == "UNKNOWN") & low_activity)
+    dead_hold = hold_context & ~restart_activation & ~out["control_anchor"].to_numpy(bool)
+    restart_pending = restart_context & ~restart_activation
+
+    role_state = np.full(n, "NONE", dtype=object)
+    role_reason = np.full(n, "NO_ROLE", dtype=object)
+    for mask, state, reason in [
+        (contact_anchor, "CONTACT_ANCHOR", "BALL_CONTACT_OR_MOTION_CHANGE"),
+        (switch_hypothesis, "SWITCH_HYPOTHESIS", "INTERVAL_OWNERSHIP_QUESTION"),
+        (dead_hold, "D_HOLD", "STOPPAGE_EVIDENCE_WITHOUT_RESTART_CONTROL"),
+        (restart_pending, "RESTART_PENDING", "RESTART_CONTEXT_WITHOUT_PHYSICAL_ACTIVATION"),
+        (restart_activation, "RESTART_ACTIVATION", "RESTART_BALL_ACTIVE"),
+        (out["control_anchor"].to_numpy(bool), "CONTROL_ANCHOR", "PERSISTENT_TEAM_CONTROL"),
+    ]:
+        role_state[mask] = state
+        role_reason[mask] = reason
+    # A flight-origin release is more informative than a generic D hold, but
+    # remains visibly distinct from post-landing control.
+    role_state[restart_long_ball_activation] = "RESTART_LONG_BALL"
+    role_reason[restart_long_ball_activation] = "RESTART_TEAM_LAUNCHES_LONG_BALL"
+
+    out["contact_anchor"] = contact_anchor
+    out["contact_anchor_score"] = contact_score
+    out["contact_anchor_team_candidate"] = candidate_team
+    out["switch_hypothesis"] = switch_hypothesis
+    out["switch_hypothesis_team"] = switch_team
+    out["restart_activation"] = restart_activation
+    out["restart_activation_team"] = np.where(restart_activation, restart_team, None)
+    out["restart_long_ball_activation"] = restart_long_ball_activation
+    out["long_ball_initiating_team"] = np.where(long_ball_initiating, long_ball_team, None)
+    out["long_ball_initiating_anchor"] = long_ball_initiating
+    out["long_ball_initiating_confidence"] = np.where(long_ball_initiating, long_ball_confidence, 0.0)
+    out["dead_hold_candidate"] = dead_hold
+    out["restart_pending"] = restart_pending
+    out["transition_role_state"] = role_state
+    out["transition_role_reason"] = role_reason
+    return out
+
+
 def build_transition_hypothesis_ledger(features: pd.DataFrame) -> pd.DataFrame:
     """Summarise transition intervals without using ground truth.
 
@@ -2577,6 +2785,18 @@ def build_transition_hypothesis_ledger(features: pd.DataFrame) -> pd.DataFrame:
                 "kalman_reliable": bool(interval.get("transition_kalman_reliable", pd.Series(False, index=interval.index)).fillna(False).any()),
                 "kalman_uncertainty_max_m": float(numeric(interval, "transition_kalman_uncertainty_m").max(skipna=True)),
                 "missing_ball_cause": str(cause_values.mode().iloc[0]) if not cause_values.empty else "UNKNOWN",
+                "contact_anchor_max": bool(interval.get("contact_anchor", pd.Series(False, index=interval.index)).fillna(False).any()),
+                "contact_anchor_score_max": float(numeric(interval, "contact_anchor_score", 0.0).max(skipna=True)),
+                "switch_hypothesis": bool(interval.get("switch_hypothesis", pd.Series(False, index=interval.index)).fillna(False).any()),
+                "control_anchor_max": bool(interval.get("control_anchor", pd.Series(False, index=interval.index)).fillna(False).any()),
+                "control_anchor_team": first_team(interval, "control_anchor_team"),
+                "restart_activation": bool(interval.get("restart_activation", pd.Series(False, index=interval.index)).fillna(False).any()),
+                "restart_activation_team": first_team(interval, "restart_activation_team"),
+                "restart_long_ball_activation": bool(interval.get("restart_long_ball_activation", pd.Series(False, index=interval.index)).fillna(False).any()),
+                "long_ball_initiating_team": first_team(interval, "long_ball_initiating_team"),
+                "dead_hold_candidate": bool(interval.get("dead_hold_candidate", pd.Series(False, index=interval.index)).fillna(False).any()),
+                "transition_role_state": str(interval.get("transition_role_state", pd.Series("NONE", index=interval.index)).mode().iloc[0]),
+                "transition_role_reason": str(interval.get("transition_role_reason", pd.Series("NO_ROLE", index=interval.index)).mode().iloc[0]),
                 "evidence_reason": "|".join(evidence),
                 "conflict_reason": "|".join(conflicts) if conflicts else "NONE",
                 "decoder_action": decoder_action,

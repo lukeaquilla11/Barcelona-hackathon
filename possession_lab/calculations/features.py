@@ -41,6 +41,7 @@ from possession_lab.decoder_experiments import (
     add_missing_ball_cause_features,
     add_transition_hypothesis_features,
     add_transition_boundary_hypotheses,
+    add_transition_role_evidence,
     add_transition_trust_features,
     classify_scenarios,
 )
@@ -128,6 +129,7 @@ def build_engineered_features(
     )
     temporal = add_transition_hypothesis_features(temporal)
     temporal = add_transition_boundary_hypotheses(temporal)
+    temporal = add_transition_role_evidence(temporal)
     temporal = add_scenario_episode_features(temporal)
     return add_scenario_evidence_features(
         temporal,
