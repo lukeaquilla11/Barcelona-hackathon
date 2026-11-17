@@ -14,6 +14,7 @@ from possession_lab.decoder_experiments import (
     dead_ball_boundary_evidence,
     forward_settling_dead_ball_evidence,
     anchor_terminated_forward_settling_dead_ball_evidence,
+    resolve_restart_long_ball_origin_labels,
     low_motion_dead_ball_evidence,
     retain_no_switch_intervals,
     local_touch_viterbi,
@@ -519,6 +520,26 @@ def main() -> None:
     )
     model.write_submission(anchor_terminated_output, anchor_terminated_labels)
     print(anchor_terminated_output)
+
+    # Restart long-ball diagnostic: carry the launching team through the
+    # flight, then allow a switch only after persistent opposing control at the
+    # landing. This does not replace the promoted output.
+    restart_long_ball_labels = resolve_restart_long_ball_origin_labels(
+        temporal,
+        no_switch_labels,
+        minimum_anchor_confidence=0.85,
+        minimum_control_run_frames=3,
+        maximum_prelaunch_dead_frames=25,
+        maximum_landing_search_frames=75,
+    )
+    restart_long_ball_output = (
+        ROOT
+        / "evaluation"
+        / "results"
+        / "diagnostic_restart_long_ball_origin_landing.csv"
+    )
+    model.write_submission(restart_long_ball_output, restart_long_ball_labels)
+    print(restart_long_ball_output)
 
     # Local short-touch/flight path diagnostic.  This is deliberately kept
     # separate from the promoted resolver: it compares a no-switch path, a

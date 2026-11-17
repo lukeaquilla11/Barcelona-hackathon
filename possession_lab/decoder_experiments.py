@@ -633,6 +633,161 @@ def anchor_terminated_forward_settling_dead_ball_evidence(
     return output.astype("<U1")
 
 
+def resolve_restart_long_ball_origin_labels(
+    features: pd.DataFrame,
+    base_labels: np.ndarray,
+    *,
+    minimum_anchor_confidence: float = 0.85,
+    minimum_control_run_frames: int = 3,
+    maximum_prelaunch_dead_frames: int = 25,
+    maximum_landing_search_frames: int = 75,
+) -> np.ndarray:
+    """Use restart long-ball origin continuity, then inspect the landing.
+
+    A restart launch identifies the team putting the ball back into play.  The
+    origin team is carried through the bounded kick episode, including the
+    flight, but it is not treated as proof of landing ownership.  After the
+    episode ends, a persistent opposing ``CONTROL_ANCHOR`` is allowed to
+    create the local switch boundary.  This is a diagnostic resolver only and
+    never uses labels from the public ground truth.
+    """
+    output = np.asarray(base_labels, dtype="<U1").copy()
+    n_frames = len(features)
+    in_play = graded_mask(n_frames)
+    if n_frames == 0:
+        return output
+
+    def boolean(name: str) -> np.ndarray:
+        return features.get(
+            name, pd.Series(False, index=features.index)
+        ).fillna(False).to_numpy(bool)
+
+    def numeric(name: str, default: float = 0.0) -> np.ndarray:
+        return pd.to_numeric(
+            features.get(name, pd.Series(default, index=features.index)),
+            errors="coerce",
+        ).fillna(default).to_numpy(float)
+
+    def teams(name: str) -> np.ndarray:
+        values = features.get(
+            name, pd.Series(None, index=features.index, dtype=object)
+        ).to_numpy(object)
+        return np.where(np.isin(values, ["H", "A"]), values, None)
+
+    restart_long_ball = boolean("restart_long_ball_activation")
+    long_ball = boolean("kick_episode_long_ball_candidate") | boolean(
+        "flight_origin_anchor_active"
+    )
+    origin_team = teams("long_ball_initiating_team")
+    origin_team = np.where(
+        np.isin(origin_team, ["H", "A"]),
+        origin_team,
+        teams("flight_origin_anchor_team"),
+    )
+    origin_confidence = np.maximum(
+        numeric("long_ball_initiating_confidence"),
+        numeric("flight_origin_anchor_confidence"),
+    )
+    restart_context = boolean("restart_context") | boolean("smart_set_piece")
+    episode = pd.to_numeric(
+        features.get("kick_episode_id", pd.Series(-1, index=features.index)),
+        errors="coerce",
+    ).fillna(-1).to_numpy(int)
+
+    control = boolean("control_anchor")
+    control_team = teams("control_anchor_team")
+    control_confidence = numeric("control_anchor_confidence")
+    reliable_control = (
+        control
+        & np.isin(control_team, ["H", "A"])
+        & (control_confidence >= float(minimum_anchor_confidence))
+    )
+
+    # A restart long-ball activation is the only entry point. This prevents a
+    # normal live long ball from being relabelled merely because it is long.
+    launches = np.flatnonzero(
+        restart_long_ball
+        & np.isin(origin_team, ["H", "A"])
+        & (origin_confidence >= 0.50)
+        & in_play
+    )
+    minimum_control_run = max(1, int(minimum_control_run_frames))
+    maximum_prelaunch_dead = max(0, int(maximum_prelaunch_dead_frames))
+    maximum_landing_search = max(1, int(maximum_landing_search_frames))
+
+    visited_episodes: set[int] = set()
+    for launch in launches:
+        episode_id = int(episode[launch])
+        if episode_id >= 0 and episode_id in visited_episodes:
+            continue
+        if episode_id >= 0:
+            visited_episodes.add(episode_id)
+            episode_positions = np.flatnonzero(episode == episode_id)
+        else:
+            episode_positions = np.array([int(launch)], dtype=int)
+        if not episode_positions.size:
+            continue
+
+        flight_positions = episode_positions[long_ball[episode_positions]]
+        if not flight_positions.size:
+            flight_positions = episode_positions
+        flight_start = int(flight_positions[0])
+        flight_end = int(flight_positions[-1])
+        team = origin_team[launch]
+        if team not in {"H", "A"}:
+            team = origin_team[flight_positions[0]]
+        if team not in {"H", "A"}:
+            continue
+
+        # Start continuity at the observed restart activation, not at the
+        # first frame that the broader kick episode satisfies the long-ball
+        # predicate.  The latter can precede the restart boundary and would
+        # incorrectly erase a preceding D interval.
+        origin_start = int(launch)
+        pre_start = max(0, origin_start - maximum_prelaunch_dead)
+        has_restart_dead_context = bool(
+            np.any(output[pre_start : origin_start + 1] == "D")
+            or np.any(restart_context[pre_start : origin_start + 1])
+        )
+        if not has_restart_dead_context:
+            continue
+
+        # The origin team owns the restart flight interval for continuity. X
+        # remains protected because it is outside the graded match timeline.
+        flight_slice = slice(origin_start, min(n_frames, flight_end + 1))
+        output[flight_slice] = np.where(
+            in_play[flight_slice], team, output[flight_slice]
+        )
+
+        # Landing ownership is a new question. Search only after the flight
+        # and accept an opponent after a short persistent control run.
+        search_end = min(n_frames, flight_end + 1 + maximum_landing_search)
+        cursor = min(n_frames, flight_end + 1)
+        while cursor < search_end:
+            candidate_team = control_team[cursor]
+            if (
+                not reliable_control[cursor]
+                or candidate_team not in {"H", "A"}
+                or candidate_team == team
+            ):
+                cursor += 1
+                continue
+            run_end = cursor + 1
+            while (
+                run_end < search_end
+                and reliable_control[run_end]
+                and control_team[run_end] == candidate_team
+            ):
+                run_end += 1
+            if run_end - cursor >= minimum_control_run:
+                output[cursor] = candidate_team
+                break
+            cursor = run_end
+
+    output[~in_play] = "X"
+    return output.astype("<U1")
+
+
 def literal_out_of_bounds_dead_ball_evidence(
     features: pd.DataFrame,
     base_labels: np.ndarray,

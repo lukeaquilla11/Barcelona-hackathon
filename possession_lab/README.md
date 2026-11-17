@@ -101,6 +101,11 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
   holds the proposed D interval until the first persistent short-ball control anchor or
   restart long-ball launch. It tied the promoted public score and changed only ungraded
   full-match frames, so it is not enabled in the winner yet.
+- `diagnostic_restart_long_ball_origin_landing` — a bounded long-ball diagnostic. It carries
+  the restart-launching team only from the restart activation through the inferred flight,
+  then permits a handoff only after persistent opposing control at the landing. It did not
+  improve the public result (`0.8943 / 0.6207 / 0.4571` versus the promoted
+  `0.8947 / 0.6400 / 0.4865`), so it remains an appendix experiment rather than a label rule.
 - `diagnostic_channel_profile_anchor_dominant`, `diagnostic_channel_profile_balanced`, and
   `diagnostic_channel_profile_independent_support` — predeclared transition-channel ablations.
   They combine anchor agreement, ball motion/contact, player arrival, restart continuity, and

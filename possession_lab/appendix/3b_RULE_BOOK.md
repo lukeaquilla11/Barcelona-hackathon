@@ -129,6 +129,13 @@ Therefore, do not assign the Smart Tagging team across the whole long-ball
 interval. Keep the current supported H/A label during flight and allow a
 switch only when later reception evidence supports the receiving team.
 
+The runner also tests this explicitly as
+`diagnostic_restart_long_ball_origin_landing`: a restart activation starts a
+bounded origin-team continuity interval, while a persistent opposing control
+anchor is required at landing before a handoff is proposed. On the public
+five-minute slice this was slightly worse than the promoted policy, so the
+rule is retained as an auditable hypothesis rather than promoted into labels.
+
 ### When is Smart Tagging checked?
 
 Smart Tagging is a *scenario gate*, not the first labeler we consult on every
