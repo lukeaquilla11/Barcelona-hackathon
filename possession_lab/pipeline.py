@@ -54,14 +54,23 @@ def build_observations(
     data_dir: str | Path | None = None,
     george_ballfill_path: str | Path | None = None,
     george_allow_model_filled: bool = False,
+    george_evidence_only: bool = False,
 ) -> pd.DataFrame:
-    """Build the complete shared observation/calculation table."""
+    """Build the complete shared observation/calculation table.
+
+    ``george_evidence_only=True`` preserves the tactical ball trajectory and
+    exposes George's source/uncertainty observations to downstream scenarios
+    and transition hypotheses.  It is the safe integration mode for the
+    reference model; coordinate filling remains available as an explicit
+    ablation.
+    """
     resolved_model = model or ClosestTeamRuleModel(game=game, data_dir=data_dir)
     return build_engineered_features(
         model=resolved_model,
         rules=rules,
         george_ballfill_path=george_ballfill_path,
         george_allow_model_filled=george_allow_model_filled,
+        george_evidence_only=george_evidence_only,
     )
 
 

@@ -464,6 +464,17 @@ def add_missing_ball_cause_features(features: pd.DataFrame) -> pd.DataFrame:
     valid_tracking = boolean("valid")
     reprojection_error = numeric("reprojection_error")
     visibility_signal = (~valid_tracking) | (np.isfinite(reprojection_error) & (reprojection_error > 0.75))
+    # George is observation-quality evidence only. An alternate-camera
+    # observation can explain a tactical gap and refine its likely cause, but
+    # it does not select H/A ownership by itself.
+    george_gap_observed = boolean("ball_fill_observed_during_tactical_gap")
+    george_flight = george_gap_observed & boolean("ball_fill_flight_observation")
+    george_dead = np.where(
+        george_gap_observed,
+        np.clip(np.nan_to_num(numeric("ball_fill_dead_probability", 0.0), nan=0.0), 0.0, 1.0),
+        0.0,
+    )
+    visibility_signal = visibility_signal | george_gap_observed
     control_signal = (
         boolean("gap_same_player_dribble_candidate")
         | (
@@ -477,8 +488,11 @@ def add_missing_ball_cause_features(features: pd.DataFrame) -> pd.DataFrame:
     # is deliberately bounded to the observed run; it does not invent a path
     # for leading/trailing missing data.
     interval_signals = {
-        "dead_or_out": (boundary_anchor | (smart_set_piece & low_motion)).astype(float),
-        "flight": flight_signal.astype(float),
+        "dead_or_out": np.maximum(
+            (boundary_anchor | (smart_set_piece & low_motion)).astype(float),
+            george_dead,
+        ),
+        "flight": np.maximum(flight_signal.astype(float), george_flight.astype(float)),
         "deflection": deflection_signal.astype(float),
         "control": control_signal.astype(float),
         "crowd": crowd_signal_score,
@@ -580,6 +594,9 @@ def add_missing_ball_cause_features(features: pd.DataFrame) -> pd.DataFrame:
     out["missing_ball_cause_deflection_score"] = deflection_score
     out["missing_ball_cause_crowd_score"] = crowd_score
     out["missing_ball_cause_visibility_score"] = visibility_score
+    out["missing_ball_cause_george_observed_score"] = george_gap_observed.astype(float)
+    out["missing_ball_cause_george_flight_score"] = george_flight.astype(float)
+    out["missing_ball_cause_george_dead_score"] = george_dead
     out["missing_ball_gap_trajectory_continuity_score"] = continuity_score
     out["missing_ball_gap_same_team_reappearance_score"] = same_team_score
     out["missing_ball_gap_opponent_reappearance_score"] = opponent_score

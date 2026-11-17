@@ -237,8 +237,11 @@ receiver persistence features, and the later team anchor.
 
 George's branch is now integrated at the observation boundary, before temporal features and
 scenario classification. The adapter preserves the tactical ball, accepts only observed/fused
-George sources by default, records source and positional uncertainty, and fills eligible tactical
-gaps. It does not import George's carrier-HMM labels as possession labels.
+George sources by default, and records source and positional uncertainty. It supports two explicit
+modes: coordinate filling for a diagnostic ablation, and evidence-only mode, which leaves tactical
+coordinates unchanged while passing source, uncertainty, flight, and dead-ball observations into
+the missing-ball cause and transition evidence layers. It does not import George's carrier-HMM
+labels as possession labels.
 
 The current local `data/ball/BAR-ATH_ball.csv` filled 16,140 tactical gaps, changed 15,033
 scenario-context frames and 26,524 missing-ball-cause frames, and changed 7,751 final labels,
@@ -248,6 +251,12 @@ additional observations, but this fill policy changes trajectory-derived scenari
 create unsupported ownership changes. The experiment remains useful for source audits and future
 uncertainty-weighted or source-specific transition evidence; it is not the promoted full-match
 label input.
+
+The evidence-only path is the safer architectural integration. On the available public slice it
+filled zero tactical coordinates, changed missing-ball cause evidence on 7,647 frames, and produced
+byte-identical labels to the current winner: Macro-F1 `0.8917`, Spell-F1 `0.6207`, and Transition
+F1@25 `0.4571`. This is useful even without a score gain: alternate-camera information is available
+to future scenario/transition rules without allowing it to manufacture a possession switch.
 
 For completeness, enabling George's carrier-HMM `filled` source as a separate
 diagnostic filled 30,388 gaps and scored Macro-F1 `0.8796`, Spell-F1 `0.6069`,

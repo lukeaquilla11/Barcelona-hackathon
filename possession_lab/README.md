@@ -56,15 +56,20 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
 - [broadcast_alignment.py](./broadcast_alignment.py) — generic broadcast/tactical alignment audit;
 - [george_ballfill_adapter.py](./george_ballfill_adapter.py) — optional, source-aware adapter for
   George's fused broadcast/tactical ball observations. It preserves the tactical ball, records
-  source and uncertainty, and fills only eligible tactical gaps before feature construction;
+  source and uncertainty, and can either fill eligible tactical gaps or run in evidence-only mode;
+  evidence-only mode leaves tactical coordinates unchanged while exposing George's source,
+  uncertainty, flight, and dead-ball observations to the missing-ball/scenario layers;
 - [run_george_ballfill_experiment.py](./run_george_ballfill_experiment.py) — runs the current best
   visible-ball + NO_SWITCH resolver as a separate George-observation ablation and can compare the
   upstream motion/scenario signals against the no-George feature table. With the current local CSV
   it fills 16,140 tactical gaps, changes 7,751 final labels, and lowers the public score, so this
-  remains an explicit ablation rather than the promoted model;
+  remains an explicit coordinate-fill ablation rather than the promoted model. Use
+  `--evidence-only` to test the safer source-aware observation path; it currently produces the
+  same labels as the no-George winner while changing missing-ball cause evidence on 7,647 frames;
 - [run_interpolated_flight_experiment.py](./run_interpolated_flight_experiment.py) — the canonical
-  full runner; pass `--george-ballfill /path/to/BAR-ATH_ball.csv` to place George observations at
-  the start of the same feature/scenario/anchor/transition pipeline;
+  full runner; pass `--george-ballfill /path/to/BAR-ATH_ball.csv` and optionally
+  `--george-evidence-only` to place George observations at the start of the same
+  feature/scenario/anchor/transition pipeline;
 - `diagnostic_channel_profile_anchor_dominant`, `diagnostic_channel_profile_balanced`, and
   `diagnostic_channel_profile_independent_support` — predeclared transition-channel ablations.
   They combine anchor agreement, ball motion/contact, player arrival, restart continuity, and

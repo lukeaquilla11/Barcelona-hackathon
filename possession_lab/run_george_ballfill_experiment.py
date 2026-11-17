@@ -5,6 +5,11 @@ the no-George output remains the reference, while this command writes a
 different candidate and a compact observation audit.  It never reads ground
 truth while constructing labels.
 
+``--evidence-only`` keeps the tactical ball path unchanged and passes only
+George's source/uncertainty observations into missing-ball cause and
+transition evidence.  Without it, the runner performs the older coordinate
+fill ablation.
+
 Usage:
     python -m possession_lab.run_george_ballfill_experiment \
         --ballfill /path/to/BAR-ATH_ball.csv
@@ -215,6 +220,11 @@ def main() -> None:
         help="also allow George's carrier-HMM 'filled' source; off by default",
     )
     parser.add_argument(
+        "--evidence-only",
+        action="store_true",
+        help="keep tactical coordinates unchanged; use George only as auxiliary evidence",
+    )
+    parser.add_argument(
         "--output",
         type=Path,
         default=ROOT / "evaluation/results/diagnostic_george_fused_observed_no_switch_interval.csv",
@@ -238,6 +248,7 @@ def main() -> None:
         rules=rules,
         george_ballfill_path=args.ballfill,
         george_allow_model_filled=args.allow_model_filled,
+        george_evidence_only=args.evidence_only,
     )
     labels = build_current_best_labels(features, rules)
     model.write_submission(args.output, labels)

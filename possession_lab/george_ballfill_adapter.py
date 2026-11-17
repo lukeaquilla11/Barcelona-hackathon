@@ -68,14 +68,21 @@ def add_george_ballfill_observations(
     allowed_sources: Iterable[str] = DEFAULT_ALLOWED_SOURCES,
     maximum_sigma_m: float | None = 4.0,
     allow_model_filled: bool = False,
+    fill_tactical_gaps: bool = True,
 ) -> pd.DataFrame:
-    """Attach George observations and fill only tactical ball gaps when safe.
+    """Attach George observations and optionally fill tactical ball gaps.
 
     Original tactical coordinates remain available as ``ball_x_tactical`` and
     ``ball_y_tactical``.  ``ball_filled_from_george`` records exactly which
     rows changed.  By default, only fused/observed sources are accepted;
     George's carrier-HMM ``filled`` source must be requested explicitly so it
     cannot silently become a second possession decoder.
+
+    ``fill_tactical_gaps=False`` is the source-aware integration mode.  It
+    keeps the tactical ball path untouched while exposing George's source,
+    uncertainty, and missing-gap observations to later scenario and
+    transition layers.  This is the preferred mode when George is being used
+    as auxiliary evidence rather than as a replacement trajectory.
     """
     if "frame" not in frame_table or "ball_x" not in frame_table or "ball_y" not in frame_table:
         raise ValueError("frame_table must contain frame, ball_x, and ball_y")
@@ -116,11 +123,33 @@ def add_george_ballfill_observations(
     out["ball_fill_eligible"] = available & allowed_mask
 
     tactical_missing = out["ball_x_tactical"].isna().to_numpy() | out["ball_y_tactical"].isna().to_numpy()
-    use_fill = tactical_missing & out["ball_fill_eligible"].to_numpy(bool)
+    george_eligible = out["ball_fill_eligible"].to_numpy(bool)
+    source_is_observed = np.isin(source, ["agree", "flight", "tac", "bc", "video"])
+    source_is_model_imputed = source == "filled"
+    out["ball_fill_observed"] = george_eligible & source_is_observed
+    out["ball_fill_model_imputed"] = available & source_is_model_imputed
+    out["ball_fill_during_tactical_gap"] = tactical_missing & available
+    out["ball_fill_observed_during_tactical_gap"] = (
+        tactical_missing & george_eligible & source_is_observed
+    )
+    out["ball_fill_flight_observation"] = source == "flight"
+    out["ball_fill_low_uncertainty"] = (
+        np.isfinite(sigma) & (sigma <= 2.0) & source_is_observed
+    )
+    out["ball_fill_dead_probability"] = np.where(
+        source_is_observed,
+        np.clip(np.nan_to_num(out["ball_fill_p_dead"].to_numpy(float), nan=0.0), 0.0, 1.0),
+        0.0,
+    )
+    use_fill = tactical_missing & george_eligible & bool(fill_tactical_gaps)
     out["ball_filled_from_george"] = use_fill
     out.loc[use_fill, "ball_x"] = out.loc[use_fill, "ball_fill_x"]
     out.loc[use_fill, "ball_y"] = out.loc[use_fill, "ball_fill_y"]
-    out["ball_observation_source"] = np.where(use_fill, "george_" + pd.Series(source, index=out.index).fillna("unknown"), "tactical")
+    out["ball_observation_source"] = np.where(
+        use_fill,
+        "george_" + pd.Series(source, index=out.index).fillna("unknown"),
+        "tactical",
+    )
     out["ball_observation_sigma_m"] = np.where(use_fill, sigma, 0.0)
     return out
 

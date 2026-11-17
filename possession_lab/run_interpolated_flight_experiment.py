@@ -168,12 +168,17 @@ def main() -> None:
         "--george-ballfill",
         type=Path,
         default=None,
-        help="optional George fused ball CSV; fills eligible tactical gaps before features/scenarios",
+        help="optional George fused ball CSV; attaches source-aware observations before features/scenarios",
     )
     parser.add_argument(
         "--george-allow-model-filled",
         action="store_true",
         help="also accept George's carrier-HMM 'filled' source (diagnostic only)",
+    )
+    parser.add_argument(
+        "--george-evidence-only",
+        action="store_true",
+        help="keep tactical coordinates unchanged; use George only as missing-ball/scenario evidence",
     )
     parser.add_argument(
         "--kinson-model",
@@ -192,6 +197,7 @@ def main() -> None:
         rules=rules,
         george_ballfill_path=args.george_ballfill,
         george_allow_model_filled=args.george_allow_model_filled,
+        george_evidence_only=args.george_evidence_only,
     )
     if args.george_ballfill is not None:
         print(f"George ball observations: {args.george_ballfill}")
