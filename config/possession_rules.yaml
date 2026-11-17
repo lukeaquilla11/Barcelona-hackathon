@@ -73,6 +73,9 @@ trajectory:
     acceleration_noise_mps2: 8.0
     maximum_uncertainty_m: 8.0
     maximum_gap_frames: 25
+    # Only this lower-uncertainty subset is eligible for George/Kalman path
+    # fusion. The ordinary Kalman audit may still expose wider paths.
+    fusion_max_uncertainty_m: 4.0
 
 restart:
   active_ball_speed_mps: 1.0

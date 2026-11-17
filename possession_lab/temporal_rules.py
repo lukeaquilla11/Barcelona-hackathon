@@ -585,6 +585,186 @@ def add_kalman_ball_trajectory_features(
     return out
 
 
+def add_ball_path_fusion_features(
+    features: pd.DataFrame,
+    rules: dict[str, Any] | None = None,
+) -> pd.DataFrame:
+    """Select one source-aware ball path for internal tactical gaps.
+
+    George and Kalman can describe the same hidden interval, so their scores
+    must not be added as if they were independent observations.  The
+    precedence is direct George observation, George geometric flight, then a
+    short low-uncertainty Kalman path.  Agreement between available sources is
+    exposed separately for player-arrival and transition evidence; disagreement
+    increases ambiguity rather than awarding a team.
+    """
+    rules = load_rules() if rules is None else rules
+    out = features.copy()
+    n = len(out)
+    pitch_length = float(_value(rules, "pitch", "length_m"))
+    pitch_width = float(_value(rules, "pitch", "width_m"))
+    kalman_rules = rules.get("trajectory", {}).get("kalman", {})
+    maximum_uncertainty = float(kalman_rules.get("maximum_uncertainty_m", 8.0))
+    fusion_uncertainty = float(
+        kalman_rules.get(
+            "fusion_max_uncertainty_m",
+            min(4.0, maximum_uncertainty),
+        )
+    )
+
+    def numeric(name: str, default: float = np.nan) -> np.ndarray:
+        return pd.to_numeric(
+            out.get(name, pd.Series(default, index=out.index)), errors="coerce"
+        ).to_numpy(float)
+
+    tactical_x = numeric("ball_x")
+    tactical_y = numeric("ball_y")
+    tactical_missing = ~np.isfinite(tactical_x) | ~np.isfinite(tactical_y)
+    george_x = numeric("ball_fill_x")
+    george_y = numeric("ball_fill_y")
+    george_available = (
+        out.get("ball_fill_eligible", pd.Series(False, index=out.index))
+        .fillna(False)
+        .to_numpy(bool)
+        & np.isfinite(george_x)
+        & np.isfinite(george_y)
+    )
+    source_class = out.get(
+        "ball_fill_source_class",
+        pd.Series("untrusted_or_metadata", index=out.index),
+    ).fillna("untrusted_or_metadata").to_numpy(object)
+    george_direct = (
+        tactical_missing
+        & george_available
+        & (source_class == "direct_observation")
+    )
+    george_flight = (
+        tactical_missing
+        & george_available
+        & (source_class == "geometric_reconstruction")
+    )
+
+    kalman_x = numeric("ball_x_kalman")
+    kalman_y = numeric("ball_y_kalman")
+    kalman_uncertainty = numeric("ball_kalman_position_uncertainty_m")
+    kalman_available = (
+        tactical_missing
+        & out.get("ball_kalman_path_available", pd.Series(False, index=out.index))
+        .fillna(False)
+        .to_numpy(bool)
+        & out.get("ball_kalman_reliable", pd.Series(False, index=out.index))
+        .fillna(False)
+        .to_numpy(bool)
+        & np.isfinite(kalman_x)
+        & np.isfinite(kalman_y)
+        & np.isfinite(kalman_uncertainty)
+        & (kalman_uncertainty <= fusion_uncertainty)
+    )
+
+    # Observed tactical coordinates remain the primary path whenever present.
+    source = np.full(n, "UNRESOLVED", dtype=object)
+    source[~tactical_missing & np.isfinite(tactical_x) & np.isfinite(tactical_y)] = "TACTICAL"
+    source[george_direct] = "GEORGE_DIRECT"
+    source[~george_direct & george_flight] = "GEORGE_FLIGHT"
+    source[~george_direct & ~george_flight & kalman_available] = "KALMAN"
+
+    fused_x = tactical_x.copy()
+    fused_y = tactical_y.copy()
+    fused_uncertainty = np.where(np.isfinite(tactical_x) & np.isfinite(tactical_y), 0.0, np.nan)
+    direct_or_flight = george_direct | george_flight
+    fused_x[direct_or_flight] = george_x[direct_or_flight]
+    fused_y[direct_or_flight] = george_y[direct_or_flight]
+    george_sigma = numeric("ball_fill_sigma_m")
+    fused_uncertainty[direct_or_flight] = np.where(
+        np.isfinite(george_sigma[direct_or_flight]),
+        george_sigma[direct_or_flight],
+        np.nan,
+    )
+    fused_x[~direct_or_flight & kalman_available] = kalman_x[~direct_or_flight & kalman_available]
+    fused_y[~direct_or_flight & kalman_available] = kalman_y[~direct_or_flight & kalman_available]
+    fused_uncertainty[~direct_or_flight & kalman_available] = kalman_uncertainty[
+        ~direct_or_flight & kalman_available
+    ]
+
+    # Compare the alternative sources only where both describe the same gap.
+    source_comparison = george_available & kalman_available
+    george_direction = numeric("ball_fill_direction_rad")
+    kalman_direction = numeric("ball_kalman_direction_rad")
+    george_speed = numeric("ball_fill_speed_mps")
+    kalman_speed = numeric("ball_kalman_speed_mps")
+    distance = np.full(n, np.nan, dtype=float)
+    distance[source_comparison] = np.hypot(
+        (george_x[source_comparison] - kalman_x[source_comparison]) * pitch_length,
+        (george_y[source_comparison] - kalman_y[source_comparison]) * pitch_width,
+    )
+    direction_delta = np.full(n, np.nan, dtype=float)
+    direction_valid = source_comparison & np.isfinite(george_direction) & np.isfinite(kalman_direction)
+    direction_delta[direction_valid] = np.abs(
+        np.arctan2(
+            np.sin(george_direction[direction_valid] - kalman_direction[direction_valid]),
+            np.cos(george_direction[direction_valid] - kalman_direction[direction_valid]),
+        )
+    )
+    speed_delta = np.full(n, np.nan, dtype=float)
+    speed_valid = source_comparison & np.isfinite(george_speed) & np.isfinite(kalman_speed)
+    speed_delta[speed_valid] = np.abs(george_speed[speed_valid] - kalman_speed[speed_valid])
+    distance_score = np.exp(-np.nan_to_num(distance, nan=100.0) / 3.0)
+    direction_score = np.exp(-np.nan_to_num(direction_delta, nan=np.pi) / 0.8)
+    speed_score = np.exp(-np.nan_to_num(speed_delta, nan=100.0) / 8.0)
+    agreement = np.full(n, np.nan, dtype=float)
+    agreement[source_comparison] = np.mean(
+        np.column_stack([distance_score, direction_score, speed_score]), axis=1
+    )[source_comparison]
+
+    # Derive motion from the selected path. These columns are used only as
+    # missing-ball evidence; visible tactical motion remains unchanged.
+    dx = np.r_[np.nan, np.diff(fused_x)] * pitch_length
+    dy = np.r_[np.nan, np.diff(fused_y)] * pitch_width
+    displacement = np.hypot(dx, dy)
+    frame_delta = np.r_[np.nan, np.diff(pd.to_numeric(out["frame"], errors="coerce").to_numpy(float))]
+    elapsed = frame_delta / float(_value(rules, "timeline", "fps"))
+    valid_motion = np.isfinite(displacement) & np.isfinite(elapsed) & (elapsed > 0.0)
+    speed = np.full(n, np.nan, dtype=float)
+    speed[valid_motion] = displacement[valid_motion] / elapsed[valid_motion]
+    direction = np.full(n, np.nan, dtype=float)
+    direction[valid_motion & (displacement > 0.0)] = np.arctan2(
+        dy[valid_motion & (displacement > 0.0)],
+        dx[valid_motion & (displacement > 0.0)],
+    )
+    direction_change = np.full(n, np.nan, dtype=float)
+    direction_change[1:] = np.abs(
+        np.arctan2(
+            np.sin(direction[1:] - direction[:-1]),
+            np.cos(direction[1:] - direction[:-1]),
+        )
+    )
+    acceleration = np.full(n, np.nan, dtype=float)
+    acceleration[1:] = (speed[1:] - speed[:-1]) / np.maximum(elapsed[1:], 1e-6)
+
+    out["ball_path_fused_x"] = fused_x
+    out["ball_path_fused_y"] = fused_y
+    out["ball_path_fused_source"] = source
+    out["ball_path_fused_available"] = np.isfinite(fused_x) & np.isfinite(fused_y)
+    out["ball_path_fused_uncertainty_m"] = fused_uncertainty
+    out["ball_path_kalman_candidate"] = kalman_available
+    out["ball_path_george_direct_candidate"] = george_direct
+    out["ball_path_george_flight_candidate"] = george_flight
+    out["ball_path_george_kalman_distance_m"] = distance
+    out["ball_path_george_kalman_direction_delta_rad"] = direction_delta
+    out["ball_path_george_kalman_speed_delta_mps"] = speed_delta
+    out["ball_path_george_kalman_agreement_score"] = agreement
+    out["ball_path_george_kalman_disagreement_score"] = np.where(
+        np.isfinite(agreement), 1.0 - agreement, np.nan
+    )
+    out["ball_path_fused_displacement_m"] = displacement
+    out["ball_path_fused_speed_mps"] = speed
+    out["ball_path_fused_direction_rad"] = direction
+    out["ball_path_fused_direction_change_rad"] = direction_change
+    out["ball_path_fused_acceleration_mps2"] = acceleration
+    out["ball_path_fusion_kalman_uncertainty_gate_m"] = fusion_uncertainty
+    return out
+
+
 def add_gap_player_path_features(
     features: pd.DataFrame,
     team_by_slot: dict[int, str],
@@ -611,6 +791,8 @@ def add_gap_player_path_features(
         "gap_player_path_team": None,
         "gap_player_endpoint_distance_m": np.nan,
         "gap_player_path_alignment": np.nan,
+        "gap_player_path_team_margin_m": np.nan,
+        "gap_player_path_ambiguous": False,
         "gap_player_path_supported": False,
         "gap_player_speed_before_mps": np.nan,
         "gap_player_speed_after_mps": np.nan,
@@ -620,9 +802,17 @@ def add_gap_player_path_features(
     }.items():
         out[column] = default
 
-    ball_x = _numeric(out, "ball_x").to_numpy(float)
-    ball_y = _numeric(out, "ball_y").to_numpy(float)
-    missing = ~np.isfinite(ball_x) | ~np.isfinite(ball_y)
+    tactical_ball_x = _numeric(out, "ball_x").to_numpy(float)
+    tactical_ball_y = _numeric(out, "ball_y").to_numpy(float)
+    ball_x = _numeric(
+        out,
+        "ball_path_fused_x" if "ball_path_fused_x" in out else "ball_x",
+    ).to_numpy(float)
+    ball_y = _numeric(
+        out,
+        "ball_path_fused_y" if "ball_path_fused_y" in out else "ball_y",
+    ).to_numpy(float)
+    missing = ~np.isfinite(tactical_ball_x) | ~np.isfinite(tactical_ball_y)
     starts = np.flatnonzero(missing & ~np.r_[False, missing[:-1]])
     ends = np.flatnonzero(missing & ~np.r_[missing[1:], False])
     for start, end in zip(starts, ends):
@@ -666,10 +856,17 @@ def add_gap_player_path_features(
         if not supported:
             continue
         team, (distance, alignment, _) = min(supported, key=lambda item: item[1][0])
+        supported_distances = sorted(values[0] for _, values in supported)
+        second_distance = supported_distances[1] if len(supported_distances) > 1 else np.nan
+        team_margin = second_distance - distance if np.isfinite(second_distance) else np.nan
         row_slice = slice(start, end + 1)
         out.loc[row_slice, "gap_player_path_team"] = team
         out.loc[row_slice, "gap_player_endpoint_distance_m"] = distance
         out.loc[row_slice, "gap_player_path_alignment"] = alignment
+        out.loc[row_slice, "gap_player_path_team_margin_m"] = team_margin
+        out.loc[row_slice, "gap_player_path_ambiguous"] = bool(
+            np.isfinite(team_margin) and team_margin < 1.0
+        )
         out.loc[row_slice, "gap_player_path_supported"] = True
         # A same-player dribble hypothesis requires the same temporary slot to
         # be closest on both visible sides and to move at approximately the

@@ -28,6 +28,7 @@ from possession_lab.temporal_rules import (
     add_switch_confirmation_features,
     add_missing_ball_trajectory_features,
     add_kalman_ball_trajectory_features,
+    add_ball_path_fusion_features,
     add_gap_player_path_features,
     add_pipeline_evidence_features,
     add_temporal_features,
@@ -83,6 +84,7 @@ def build_engineered_features(
     temporal = add_reachability_features(temporal, slot_team_map(paths["atd_meta"]), rules)
     temporal = add_missing_ball_trajectory_features(temporal, rules)
     temporal = add_kalman_ball_trajectory_features(temporal, rules)
+    temporal = add_ball_path_fusion_features(temporal, rules)
     temporal = add_gap_player_path_features(temporal, slot_team_map(paths["atd_meta"]), rules)
     temporal = add_transition_forecast_features(temporal, rules)
     temporal = add_switch_confirmation_features(temporal, rules)

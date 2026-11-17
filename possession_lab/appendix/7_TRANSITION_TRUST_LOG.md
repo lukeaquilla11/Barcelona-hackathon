@@ -583,3 +583,24 @@ public score, so the promoted reference submission remains the no-George
 visible-ball + `NO_SWITCH` resolver. This preserves the signal for private-match
 auditing without turning a public-slice ablation into a fitted rule.
 
+## George/Kalman path-fusion experiment
+
+The overlap was tested explicitly rather than treating both paths as additive
+confidence. Inside tactical gaps the feature layer selects, in order,
+`GEORGE_DIRECT`, `GEORGE_FLIGHT`, then a short low-uncertainty `KALMAN` path.
+It records source, uncertainty, distance/direction/speed disagreement, and
+whether two nearby player trajectories are ambiguous. The selected path feeds
+player-arrival evidence; it never writes H/A directly.
+
+On the current public data this produced 185 reliable Kalman gap frames and
+only 37 frames where George and Kalman could be compared directly. The
+no-George reference remained **0.8917 / 0.6207 / 0.4571**. The explicit
+George/Kalman path-fusion ablation changed 373 frames, all H/A relabels in
+four short windows, and scored **0.8894 / 0.6207 / 0.4000**. It did not change
+any D frames. Therefore the fusion features are retained for private-match
+auditing and missing-player analysis, but are not promoted as a public-score
+improvement. The result is consistent with the two paths sharing endpoint
+information: agreement is useful, but it is not independent evidence, and
+disagreement should make the resolver more conservative rather than force a
+team switch.
+

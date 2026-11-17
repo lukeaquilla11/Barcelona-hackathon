@@ -58,7 +58,10 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
   George's fused broadcast/tactical ball observations. It preserves the tactical ball, records
   source and uncertainty, and can either fill eligible tactical gaps or run in evidence-only mode;
   evidence-only mode leaves tactical coordinates unchanged while exposing George's source,
-  uncertainty, flight, and dead-ball observations to the missing-ball/scenario layers. This repo
+  uncertainty, flight, and dead-ball observations to the missing-ball/scenario layers. The
+  feature builder also exposes a non-additive path-fusion audit: George direct observation,
+  then George flight reconstruction, then a short low-uncertainty Kalman path. Agreement and
+  disagreement are recorded separately, so correlated paths are not double-counted. This repo
   consumes George's precomputed CSV; generating it remains a separate George-branch video/alignment
   workflow. `minimum_observation_confidence` is an optional coordinate-fill gate: low-confidence
   observations remain evidence but do not replace tactical coordinates;

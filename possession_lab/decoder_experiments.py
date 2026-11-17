@@ -474,7 +474,13 @@ def add_missing_ball_cause_features(features: pd.DataFrame) -> pd.DataFrame:
         np.clip(np.nan_to_num(numeric("ball_fill_dead_probability", 0.0), nan=0.0), 0.0, 1.0),
         0.0,
     )
+    path_disagreement = np.clip(
+        np.nan_to_num(numeric("ball_path_george_kalman_disagreement_score", 0.0), nan=0.0),
+        0.0,
+        1.0,
+    )
     visibility_signal = visibility_signal | george_gap_observed
+    visibility_signal = visibility_signal | (path_disagreement >= 0.65)
     control_signal = (
         boolean("gap_same_player_dribble_candidate")
         | (
@@ -597,6 +603,7 @@ def add_missing_ball_cause_features(features: pd.DataFrame) -> pd.DataFrame:
     out["missing_ball_cause_george_observed_score"] = george_gap_observed.astype(float)
     out["missing_ball_cause_george_flight_score"] = george_flight.astype(float)
     out["missing_ball_cause_george_dead_score"] = george_dead
+    out["missing_ball_cause_path_disagreement_score"] = path_disagreement
     out["missing_ball_gap_trajectory_continuity_score"] = continuity_score
     out["missing_ball_gap_same_team_reappearance_score"] = same_team_score
     out["missing_ball_gap_opponent_reappearance_score"] = opponent_score
@@ -1958,6 +1965,16 @@ def add_transition_hypothesis_features(
         1.0,
     ) * george_confidence
     george_uncertainty_support = george_gap_observed * (1.0 - george_confidence)
+    path_agreement = np.clip(
+        np.nan_to_num(numeric("ball_path_george_kalman_agreement_score", 0.0), nan=0.0),
+        0.0,
+        1.0,
+    )
+    path_disagreement = np.clip(
+        np.nan_to_num(numeric("ball_path_george_kalman_disagreement_score", 0.0), nan=0.0),
+        0.0,
+        1.0,
+    )
     trajectory_continuity = np.clip(
         np.nan_to_num(
             numeric("missing_ball_gap_trajectory_continuity_score", 0.0),
@@ -1988,10 +2005,11 @@ def add_transition_hypothesis_features(
         flight_origin_active.astype(float) * flight_origin_confidence,
     )
     contested_cause_support = np.maximum(cause_deflection, 0.85 * cause_crowd)
+    contested_cause_support = np.maximum(contested_cause_support, 0.75 * path_disagreement)
     dead_cause_support = np.maximum(cause_dead, george_dead_support)
     uncertainty_cause_support = np.maximum(
         cause_visibility,
-        np.maximum(cause_crowd, george_uncertainty_support),
+        np.maximum(cause_crowd, np.maximum(george_uncertainty_support, path_disagreement)),
     )
     # A channel-profile experiment may provide a conservative restart/
     # continuity support term.  It is allowed to strengthen NO_SWITCH, but it
@@ -2143,6 +2161,8 @@ def add_transition_hypothesis_features(
     out["transition_george_flight_support"] = george_flight_support
     out["transition_george_dead_support"] = george_dead_support
     out["transition_george_uncertainty_support"] = george_uncertainty_support
+    out["transition_ball_path_agreement"] = path_agreement
+    out["transition_ball_path_disagreement"] = path_disagreement
     out["transition_flight_origin_no_switch_support"] = (
         flight_origin_active.astype(float) * flight_origin_confidence
     )
