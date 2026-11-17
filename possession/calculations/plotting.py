@@ -486,8 +486,17 @@ def plot_evidence_window(
     team_by_slot: Mapping[int, str],
     ground_truth: pd.Series | None = None,
     predicted_labels: pd.Series | None = None,
+    nearby_radius_m: float = 12.0,
+    nearby_count: int = 6,
+    show_all_reference_players: bool = False,
 ):
-    """Show pitch geometry above a timeline of scenarios, anchors, and switches."""
+    """Show significant frame geometry above a timeline of context and evidence.
+
+    The pitch panel deliberately defaults to the fixed nearby-player union rather
+    than every tracked slot.  This keeps the single-frame explanation readable;
+    the companion animation remains the full tracking window and therefore still
+    shows the whole team shape and any player disappearance.
+    """
     import matplotlib.pyplot as plt
 
     window = features.loc[features["frame"].between(start_frame, end_frame)].copy()
@@ -502,6 +511,9 @@ def plot_evidence_window(
         end_frame,
         team_by_slot=team_by_slot,
         reference_frame=int(window.iloc[len(window) // 2]["frame"]),
+        nearby_radius_m=nearby_radius_m,
+        nearby_count=nearby_count,
+        show_all_reference_players=show_all_reference_players,
         ax=pitch_ax,
     )
     # Keep the pitch-and-timeline composite on the same canonical timeline helper used by

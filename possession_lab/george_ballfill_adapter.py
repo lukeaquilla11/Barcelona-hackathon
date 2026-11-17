@@ -29,6 +29,16 @@ DEFAULT_ALLOWED_SOURCES = (
     "video",
 )
 
+# These labels are provenance, not possession classes.  ``flight`` is built
+# from observations at the gap edges; ``filled`` is produced by George's
+# carrier/dead-ball model.  Neither should be described as a direct sighting.
+DIRECT_OBSERVATION_SOURCES = ("agree", "tac", "bc", "video")
+RECONSTRUCTED_SOURCES = ("flight", "filled")
+SOURCE_CLASS_DIRECT = "direct_observation"
+SOURCE_CLASS_GEOMETRIC = "geometric_reconstruction"
+SOURCE_CLASS_MODEL = "model_imputation"
+SOURCE_CLASS_UNTRUSTED = "untrusted_or_metadata"
+
 
 def load_george_ballfill(path: str | Path, n_frames: int) -> pd.DataFrame:
     """Load and validate a George ball-fill CSV on the tactical frame index.
@@ -75,9 +85,13 @@ def add_george_ballfill_observations(
 
     Original tactical coordinates remain available as ``ball_x_tactical`` and
     ``ball_y_tactical``.  ``ball_filled_from_george`` records exactly which
-    rows changed.  By default, only fused/observed sources are accepted;
+    rows changed.  Direct observations, edge-based flight reconstruction, and
+    carrier/dead-ball model imputations are kept in separate provenance flags.
     George's carrier-HMM ``filled`` source must be requested explicitly so it
-    cannot silently become a second possession decoder.
+    cannot silently become a second possession decoder.  ``ball_fill_source_class``
+    makes the contract explicit for downstream feature/scenario code:
+    direct observation, geometric reconstruction, model imputation, or
+    untrusted/metadata.
 
     ``minimum_observation_confidence`` is an optional, predeclared gate for
     coordinate replacement.  It is deliberately separate from the evidence
@@ -155,9 +169,17 @@ def add_george_ballfill_observations(
 
     tactical_missing = out["ball_x_tactical"].isna().to_numpy() | out["ball_y_tactical"].isna().to_numpy()
     george_eligible = out["ball_fill_eligible"].to_numpy(bool)
-    source_is_observed = np.isin(source, ["agree", "flight", "tac", "bc", "video"])
+    source_is_observed = np.isin(source, DIRECT_OBSERVATION_SOURCES)
     source_is_model_imputed = source == "filled"
+    source_is_geometric = source == "flight"
+    source_is_reconstructed = np.isin(source, RECONSTRUCTED_SOURCES)
+    source_class = np.full(len(out), SOURCE_CLASS_UNTRUSTED, dtype=object)
+    source_class[source_is_observed] = SOURCE_CLASS_DIRECT
+    source_class[source_is_geometric] = SOURCE_CLASS_GEOMETRIC
+    source_class[source_is_model_imputed] = SOURCE_CLASS_MODEL
+    out["ball_fill_source_class"] = source_class
     out["ball_fill_observed"] = george_eligible & source_is_observed
+    out["ball_fill_reconstructed"] = george_eligible & source_is_reconstructed
     out["ball_fill_model_imputed"] = available & source_is_model_imputed
     out["ball_fill_during_tactical_gap"] = tactical_missing & available
     out["ball_fill_observed_during_tactical_gap"] = (
@@ -181,9 +203,13 @@ def add_george_ballfill_observations(
         1.0,
     )
     source_quality = np.where(source == "video", sigma_quality * video_probability, sigma_quality)
-    out["ball_fill_sigma_quality"] = np.where(source_is_observed, sigma_quality, 0.0)
+    out["ball_fill_sigma_quality"] = np.where(
+        source_is_observed | source_is_reconstructed,
+        sigma_quality,
+        0.0,
+    )
     out["ball_fill_observation_confidence"] = np.where(
-        george_eligible & source_is_observed,
+        george_eligible & (source_is_observed | source_is_reconstructed),
         np.clip(source_quality, 0.0, 1.0),
         0.0,
     )
@@ -195,7 +221,7 @@ def add_george_ballfill_observations(
         0.0,
     )
     out["ball_fill_dead_probability"] = np.where(
-        source_is_observed,
+        source_is_observed | source_is_reconstructed,
         np.clip(np.nan_to_num(out["ball_fill_p_dead"].to_numpy(float), nan=0.0), 0.0, 1.0),
         0.0,
     )
@@ -218,4 +244,14 @@ def add_george_ballfill_observations(
     return out
 
 
-__all__ = ["DEFAULT_ALLOWED_SOURCES", "add_george_ballfill_observations", "load_george_ballfill"]
+__all__ = [
+    "DEFAULT_ALLOWED_SOURCES",
+    "DIRECT_OBSERVATION_SOURCES",
+    "RECONSTRUCTED_SOURCES",
+    "SOURCE_CLASS_DIRECT",
+    "SOURCE_CLASS_GEOMETRIC",
+    "SOURCE_CLASS_MODEL",
+    "SOURCE_CLASS_UNTRUSTED",
+    "add_george_ballfill_observations",
+    "load_george_ballfill",
+]
