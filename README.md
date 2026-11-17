@@ -105,6 +105,14 @@ pip install -r requirements.txt
 jupyter notebook notebooks/00_load_data.ipynb
 ```
 
+Notebook 09 is self-starting on a fresh checkout: generated CSVs and
+`evaluation/scoreboard.csv` are intentionally ignored, so 09 reruns its model
+generators automatically when the scoreboard is absent. Use the repository
+root as the notebook working directory and select the same environment used by
+the install command. George's raw video-observation stage has additional
+optional dependencies listed in `ballfill/requirements.txt`; it is not needed
+to run the promoted reference model or the standard 09 ranking.
+
 - `possession_lab/baseline_pipeline.py` reads the match into numpy/pandas: ball and player positions in metres, team per track, Smart Tagging, homography and the public 5-minute ground truth. Row `i` is video frame `i`, the same as a submission row.
 - [`notebooks/00_load_data.ipynb`](./notebooks/00_load_data.ipynb) walks through it with plots.
 
