@@ -1945,6 +1945,19 @@ def add_transition_hypothesis_features(
     cause_deflection = np.clip(np.nan_to_num(numeric("missing_ball_cause_deflection_score", 0.0), nan=0.0), 0.0, 1.0)
     cause_crowd = np.clip(np.nan_to_num(numeric("missing_ball_cause_crowd_score", 0.0), nan=0.0), 0.0, 1.0)
     cause_visibility = np.clip(np.nan_to_num(numeric("missing_ball_cause_visibility_score", 0.0), nan=0.0), 0.0, 1.0)
+    george_gap_observed = boolean("ball_fill_observed_during_tactical_gap")
+    george_confidence = np.clip(
+        np.nan_to_num(numeric("ball_fill_observation_confidence", 0.0), nan=0.0),
+        0.0,
+        1.0,
+    )
+    george_flight_support = george_gap_observed * boolean("ball_fill_flight_observation") * george_confidence
+    george_dead_support = george_gap_observed * np.clip(
+        np.nan_to_num(numeric("ball_fill_dead_probability", 0.0), nan=0.0),
+        0.0,
+        1.0,
+    ) * george_confidence
+    george_uncertainty_support = george_gap_observed * (1.0 - george_confidence)
     trajectory_continuity = np.clip(
         np.nan_to_num(
             numeric("missing_ball_gap_trajectory_continuity_score", 0.0),
@@ -1960,9 +1973,13 @@ def add_transition_hypothesis_features(
         kick_no_switch_support.astype(float),
         np.maximum(cause_flight, np.maximum(cause_control, 0.75 * trajectory_continuity)),
     )
+    no_switch_cause_support = np.maximum(no_switch_cause_support, george_flight_support)
     contested_cause_support = np.maximum(cause_deflection, 0.85 * cause_crowd)
-    dead_cause_support = cause_dead
-    uncertainty_cause_support = np.maximum(cause_visibility, cause_crowd)
+    dead_cause_support = np.maximum(cause_dead, george_dead_support)
+    uncertainty_cause_support = np.maximum(
+        cause_visibility,
+        np.maximum(cause_crowd, george_uncertainty_support),
+    )
     # A channel-profile experiment may provide a conservative restart/
     # continuity support term.  It is allowed to strengthen NO_SWITCH, but it
     # cannot manufacture H/A ownership or bypass the resolver's anchor and
@@ -2108,6 +2125,11 @@ def add_transition_hypothesis_features(
     out["transition_contested_cause_support"] = contested_cause_support
     out["transition_dead_ball_cause_support"] = dead_cause_support
     out["transition_uncertainty_cause_support"] = uncertainty_cause_support
+    out["transition_george_observed"] = george_gap_observed
+    out["transition_george_confidence"] = george_confidence
+    out["transition_george_flight_support"] = george_flight_support
+    out["transition_george_dead_support"] = george_dead_support
+    out["transition_george_uncertainty_support"] = george_uncertainty_support
     out["transition_kalman_path_available"] = kalman_available
     out["transition_kalman_reliable"] = kalman_reliable
     out["transition_kalman_uncertainty_m"] = kalman_uncertainty
@@ -2174,6 +2196,8 @@ def build_transition_hypothesis_ledger(features: pd.DataFrame) -> pd.DataFrame:
             evidence.append("CONTEST")
         if interval.get("ball_missing_observed", pd.Series(False, index=interval.index)).fillna(False).any():
             evidence.append("OCCLUSION")
+        if interval.get("transition_george_observed", pd.Series(False, index=interval.index)).fillna(False).any():
+            evidence.append("GEORGE_OBSERVATION")
         cause_values = interval.get(
             "transition_missing_ball_cause",
             pd.Series("UNKNOWN", index=interval.index),
@@ -2251,6 +2275,18 @@ def build_transition_hypothesis_ledger(features: pd.DataFrame) -> pd.DataFrame:
                 ),
                 "uncertainty_cause_support_max": float(
                     numeric(interval, "transition_uncertainty_cause_support", 0.0).max(skipna=True)
+                ),
+                "george_observation_confidence_max": float(
+                    numeric(interval, "transition_george_confidence", 0.0).max(skipna=True)
+                ),
+                "george_flight_support_max": float(
+                    numeric(interval, "transition_george_flight_support", 0.0).max(skipna=True)
+                ),
+                "george_dead_support_max": float(
+                    numeric(interval, "transition_george_dead_support", 0.0).max(skipna=True)
+                ),
+                "george_uncertainty_support_max": float(
+                    numeric(interval, "transition_george_uncertainty_support", 0.0).max(skipna=True)
                 ),
                 "before_anchor_team": before_team,
                 "after_anchor_team": after_team,

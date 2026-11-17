@@ -60,7 +60,9 @@ distance/speed/dead-ball Viterbi baseline. George's branch contributed a
 source-aware ball-observation/fill layer. George can now run in evidence-only
 mode: source, uncertainty, flight, and dead-ball observations are passed into
 the missing-ball/scenario layers without overwriting tactical coordinates. The
-coordinate-fill path remains a separately audited ablation. Kinson's branch contributed a
+coordinate-fill path remains a separately audited ablation. This repository
+consumes George's precomputed CSV; the alternate-video/alignment producer stays
+in George's branch. Kinson's branch contributed a
 homography-weighted HMM/Viterbi baseline and externally trained parameter ideas.
 The safe integration boundary is observation-level: George can improve the ball
 input before feature construction, while Haiqal/Kinson outputs can only be

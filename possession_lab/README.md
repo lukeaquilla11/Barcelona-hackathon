@@ -58,7 +58,9 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
   George's fused broadcast/tactical ball observations. It preserves the tactical ball, records
   source and uncertainty, and can either fill eligible tactical gaps or run in evidence-only mode;
   evidence-only mode leaves tactical coordinates unchanged while exposing George's source,
-  uncertainty, flight, and dead-ball observations to the missing-ball/scenario layers;
+  uncertainty, flight, and dead-ball observations to the missing-ball/scenario layers. This repo
+  consumes George's precomputed CSV; generating it remains a separate George-branch video/alignment
+  workflow;
 - [run_george_ballfill_experiment.py](./run_george_ballfill_experiment.py) — runs the current best
   visible-ball + NO_SWITCH resolver as a separate George-observation ablation and can compare the
   upstream motion/scenario signals against the no-George feature table. With the current local CSV

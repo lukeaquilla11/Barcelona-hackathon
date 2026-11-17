@@ -136,6 +136,26 @@ def add_george_ballfill_observations(
     out["ball_fill_low_uncertainty"] = (
         np.isfinite(sigma) & (sigma <= 2.0) & source_is_observed
     )
+    if maximum_sigma_m is None or float(maximum_sigma_m) <= 0.0:
+        sigma_quality = np.where(np.isfinite(sigma), 1.0 / (1.0 + np.maximum(sigma, 0.0)), 1.0)
+    else:
+        sigma_quality = np.where(
+            np.isfinite(sigma),
+            np.exp(-np.maximum(sigma, 0.0) / float(maximum_sigma_m)),
+            1.0,
+        )
+    video_probability = np.clip(
+        np.nan_to_num(out["ball_fill_p_video"].to_numpy(float), nan=1.0),
+        0.0,
+        1.0,
+    )
+    source_quality = np.where(source == "video", sigma_quality * video_probability, sigma_quality)
+    out["ball_fill_sigma_quality"] = np.where(source_is_observed, sigma_quality, 0.0)
+    out["ball_fill_observation_confidence"] = np.where(
+        george_eligible & source_is_observed,
+        np.clip(source_quality, 0.0, 1.0),
+        0.0,
+    )
     out["ball_fill_dead_probability"] = np.where(
         source_is_observed,
         np.clip(np.nan_to_num(out["ball_fill_p_dead"].to_numpy(float), nan=0.0), 0.0, 1.0),

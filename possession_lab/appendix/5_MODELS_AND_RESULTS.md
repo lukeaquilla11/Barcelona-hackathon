@@ -240,8 +240,10 @@ scenario classification. The adapter preserves the tactical ball, accepts only o
 George sources by default, and records source and positional uncertainty. It supports two explicit
 modes: coordinate filling for a diagnostic ablation, and evidence-only mode, which leaves tactical
 coordinates unchanged while passing source, uncertainty, flight, and dead-ball observations into
-the missing-ball cause and transition evidence layers. It does not import George's carrier-HMM
-labels as possession labels.
+the missing-ball cause and transition evidence layers. The transition ledger exposes the bounded
+George observation confidence, flight support, dead-ball support, and residual uncertainty. It does
+not import George's carrier-HMM labels as possession labels. This repository consumes the generated
+CSV; George's video/alignment producer remains outside the active pipeline.
 
 The current local `data/ball/BAR-ATH_ball.csv` filled 16,140 tactical gaps, changed 15,033
 scenario-context frames and 26,524 missing-ball-cause frames, and changed 7,751 final labels,
