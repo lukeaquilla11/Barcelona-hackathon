@@ -734,6 +734,164 @@ def add_missing_ball_cause_features(features: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def add_missing_ball_path_hypothesis_features(
+    features: pd.DataFrame,
+    *,
+    direction_change_threshold_rad: float = 0.55,
+    reliable_uncertainty_m: float = 8.0,
+) -> pd.DataFrame:
+    """Compare label-free explanations for a two-sided missing-ball gap.
+
+    This is deliberately upstream of possession decoding.  It asks what the
+    hidden ball path most resembles: a straight/continuous path, a
+    player-supported deflection, or a dead/resting interval.  It never assigns
+    H/A/D/X and never turns a direction change into a switch by itself.
+
+    The deflection score is only allowed to become meaningful when a material
+    direction change is accompanied by player-path, arrival, pressure, or
+    density evidence.  ``path_hypothesis_uncertainty`` is retained so the
+    transition layer can become more conservative when the alternatives are
+    close or the reconstructed path is poorly supported.
+    """
+    out = features.copy()
+    index = out.index
+
+    def numeric(name: str, default: float = 0.0) -> np.ndarray:
+        return pd.to_numeric(
+            out.get(name, pd.Series(default, index=index)), errors="coerce"
+        ).fillna(default).to_numpy(float)
+
+    def boolean(name: str) -> np.ndarray:
+        return out.get(name, pd.Series(False, index=index)).fillna(False).to_numpy(bool)
+
+    tactical_x = numeric("ball_x", np.nan)
+    tactical_y = numeric("ball_y", np.nan)
+    missing = ~np.isfinite(tactical_x) | ~np.isfinite(tactical_y)
+
+    gap_direction = np.abs(numeric("ball_gap_direction_change_rad", np.nan))
+    kalman_direction = np.abs(numeric("ball_kalman_direction_change_rad", np.nan))
+    kalman_direction[
+        ~(
+            boolean("ball_kalman_path_available")
+            & boolean("ball_kalman_reliable")
+        )
+    ] = np.nan
+    fused_direction = np.abs(numeric("ball_path_fused_direction_change_rad", np.nan))
+    fused_direction[~boolean("ball_path_fused_available")] = np.nan
+    direction_values = np.column_stack([gap_direction, kalman_direction, fused_direction])
+    direction_change = np.zeros(len(out), dtype=float)
+    direction_available = np.isfinite(direction_values).any(axis=1)
+    direction_change[direction_available] = np.nanmax(
+        direction_values[direction_available], axis=1
+    )
+    direction_strength = np.clip(direction_change / np.pi, 0.0, 1.0)
+    plausible_turn = missing & (direction_change >= float(direction_change_threshold_rad))
+
+    kalman_uncertainty = numeric("ball_kalman_position_uncertainty_m", np.nan).copy()
+    kalman_uncertainty[
+        ~(
+            boolean("ball_kalman_path_available")
+            & boolean("ball_kalman_reliable")
+        )
+    ] = np.nan
+    fused_uncertainty = numeric("ball_path_fused_uncertainty_m", np.nan).copy()
+    fused_uncertainty[~boolean("ball_path_fused_available")] = np.nan
+    george_uncertainty = numeric("ball_fill_sigma_m", np.nan).copy()
+    george_uncertainty[~boolean("ball_fill_eligible")] = np.nan
+    uncertainty_values = np.column_stack([
+        kalman_uncertainty,
+        fused_uncertainty,
+        george_uncertainty,
+    ])
+    uncertainty = np.full(len(out), float(reliable_uncertainty_m), dtype=float)
+    uncertainty_available = np.isfinite(uncertainty_values).any(axis=1)
+    uncertainty[uncertainty_available] = np.nanmin(
+        uncertainty_values[uncertainty_available], axis=1
+    )
+    path_reliability = np.clip(
+        1.0 - uncertainty / max(float(reliable_uncertainty_m), 1e-6),
+        0.0,
+        1.0,
+    )
+    george_kalman_agreement = np.clip(
+        numeric("ball_path_george_kalman_agreement_score", 0.0), 0.0, 1.0
+    )
+    coherent = boolean("ball_gap_trajectory_coherent") | boolean(
+        "ball_kalman_path_available"
+    )
+    straight_support = np.maximum(
+        np.clip(1.0 - direction_change / 0.90, 0.0, 1.0),
+        0.0,
+    )
+    straight_support *= np.where(coherent, 1.0, 0.5)
+    straight_score = np.clip(
+        straight_support * (0.55 * path_reliability + 0.25 * george_kalman_agreement + 0.20),
+        0.0,
+        1.0,
+    )
+
+    path_player_support = np.maximum.reduce([
+        boolean("gap_player_path_supported").astype(float),
+        boolean("ball_gap_receiver_run_supported").astype(float),
+        np.clip(numeric("h_arrival_consensus_score", 0.0), 0.0, 1.0),
+        np.clip(numeric("a_arrival_consensus_score", 0.0), 0.0, 1.0),
+    ])
+    pressure = np.clip((4.0 - numeric("candidate_pressure_m", 8.0)) / 4.0, 0.0, 1.0)
+    density = np.clip(numeric("candidate_opponent_density_5m", 0.0) / 4.0, 0.0, 1.0)
+    tackle = boolean("gap_tackle_risk_candidate").astype(float)
+    deflection_support = np.clip(
+        0.35 * path_player_support
+        + 0.25 * pressure
+        + 0.20 * density
+        + 0.20 * tackle,
+        0.0,
+        1.0,
+    )
+    deflection_score = np.where(
+        plausible_turn,
+        np.clip(direction_strength * (0.45 + 0.55 * deflection_support) * path_reliability, 0.0, 1.0),
+        0.0,
+    )
+
+    dead_score = np.maximum(
+        np.clip(numeric("missing_ball_cause_dead_or_out_score", 0.0), 0.0, 1.0),
+        np.clip(numeric("ball_fill_dead_probability", 0.0), 0.0, 1.0),
+    )
+    low_motion = (
+        numeric("player_activity_median_mps", np.inf) <= 1.5
+    ) & (numeric("player_activity_p90_mps", np.inf) <= 2.0)
+    dead_score = np.maximum(dead_score, np.where(missing & low_motion, 0.55, 0.0))
+    dead_score = np.clip(dead_score, 0.0, 1.0)
+
+    scores = np.column_stack([straight_score, deflection_score, dead_score])
+    order = np.argsort(scores, axis=1)
+    best_index = order[:, -1]
+    best = scores[np.arange(len(out)), best_index]
+    second = scores[np.arange(len(out)), order[:, -2]]
+    margin = best - second
+    hypothesis = np.asarray(["AMBIGUOUS"] * len(out), dtype=object)
+    names = np.asarray(["STRAIGHT", "PLAYER_DEFLECTION", "DEAD_RESTING"], dtype=object)
+    confident = missing & (best >= 0.45) & (margin >= 0.10)
+    hypothesis[confident] = names[best_index[confident]]
+    hypothesis[~missing] = "NOT_MISSING"
+
+    out["missing_ball_path_direction_change_rad"] = np.where(missing, direction_change, np.nan)
+    out["missing_ball_path_plausible_direction_change"] = plausible_turn
+    out["missing_ball_path_straight_score"] = np.where(missing, straight_score, 0.0)
+    out["missing_ball_path_deflection_score"] = np.where(missing, deflection_score, 0.0)
+    out["missing_ball_path_dead_resting_score"] = np.where(missing, dead_score, 0.0)
+    out["missing_ball_path_player_support_score"] = np.where(missing, deflection_support, 0.0)
+    out["missing_ball_path_uncertainty_m"] = np.where(missing, uncertainty, np.nan)
+    out["missing_ball_path_reliability"] = np.where(missing, path_reliability, 0.0)
+    out["missing_ball_path_hypothesis"] = hypothesis
+    out["missing_ball_path_hypothesis_confidence"] = np.where(confident, best, 0.0)
+    out["missing_ball_path_hypothesis_margin"] = np.where(missing, margin, np.nan)
+    out["missing_ball_path_hypothesis_uncertainty"] = np.where(
+        missing, np.clip(1.0 - margin, 0.0, 1.0), 0.0
+    )
+    return out
+
+
 def confidence_multiscale_labels(
     features: pd.DataFrame,
     short_window: int = 50,
@@ -1696,6 +1854,25 @@ def add_transition_trust_features(
     contact_change = np.clip(np.nan_to_num(speed_drop, nan=0.0) / 4.0, 0.0, 1.0)
     contact_change = np.maximum(contact_change, np.clip(np.nan_to_num(direction_change, nan=0.0) / 1.2, 0.0, 1.0) * flight)
 
+    # The missing-ball path layer is symmetric evidence: it can establish
+    # that a contact/deflection hypothesis deserves attention, but it cannot
+    # name the receiving team.  Feed it into the transition ledger only as a
+    # bounded contact and uncertainty adjustment.
+    path_deflection = np.clip(
+        numeric("missing_ball_path_deflection_score", 0.0), 0.0, 1.0
+    )
+    path_straight = np.clip(
+        numeric("missing_ball_path_straight_score", 0.0), 0.0, 1.0
+    )
+    path_dead = np.clip(
+        numeric("missing_ball_path_dead_resting_score", 0.0), 0.0, 1.0
+    )
+    path_uncertainty = np.clip(
+        numeric("missing_ball_path_hypothesis_uncertainty", 0.0), 0.0, 1.0
+    )
+    contact_change = np.maximum(contact_change, 0.25 * path_deflection)
+    flight = flight | (path_straight >= 0.65)
+
     contest = numeric("contest_score", 0.0)
     if not np.isfinite(contest).any():
         contest = numeric("candidate_opponent_density_5m", 0.0) / 4.0
@@ -1733,14 +1910,35 @@ def add_transition_trust_features(
         + 0.05 * flight.astype(float)
         + 0.05 * coherence_a
     )
-    trust_h = np.clip(trust_h - 0.10 * np.nan_to_num(contest, nan=0.0) - 0.10 * occluded, 0.0, 1.0)
-    trust_a = np.clip(trust_a - 0.10 * np.nan_to_num(contest, nan=0.0) - 0.10 * occluded, 0.0, 1.0)
+    path_ambiguity_penalty = 0.10 * path_uncertainty + 0.08 * path_dead
+    trust_h = np.clip(
+        trust_h
+        - 0.10 * np.nan_to_num(contest, nan=0.0)
+        - 0.10 * occluded
+        - path_ambiguity_penalty,
+        0.0,
+        1.0,
+    )
+    trust_a = np.clip(
+        trust_a
+        - 0.10 * np.nan_to_num(contest, nan=0.0)
+        - 0.10 * occluded
+        - path_ambiguity_penalty,
+        0.0,
+        1.0,
+    )
     trust_h = np.where(valid_h | opposite_anchor_pair, trust_h, 0.0)
     trust_a = np.where(valid_a | opposite_anchor_pair, trust_a, 0.0)
 
     # Softmax is useful for comparing alternatives, but it is explicitly
     # marked uncalibrated until a labelled calibration set exists.
-    no_switch_logit = 1.25 + 1.5 * np.nan_to_num(contest, nan=0.0) + 0.8 * (~opposite_anchor_pair)
+    no_switch_logit = (
+        1.25
+        + 1.5 * np.nan_to_num(contest, nan=0.0)
+        + 0.8 * (~opposite_anchor_pair)
+        + 0.35 * path_uncertainty
+        + 0.20 * path_dead
+    )
     logits = np.column_stack([4.0 * trust_h, 4.0 * trust_a, no_switch_logit])
     logits -= np.max(logits, axis=1, keepdims=True)
     probabilities = np.exp(logits)
@@ -1759,6 +1957,10 @@ def add_transition_trust_features(
     out["transition_trust_p_H"] = probabilities[:, 0]
     out["transition_trust_p_A"] = probabilities[:, 1]
     out["transition_trust_p_no_switch"] = probabilities[:, 2]
+    out["transition_path_deflection_support"] = path_deflection
+    out["transition_path_straight_support"] = path_straight
+    out["transition_path_dead_resting_support"] = path_dead
+    out["transition_path_uncertainty"] = path_uncertainty
     out["transition_trust_calibrated"] = False
     out["transition_trust_candidate"] = opposite_anchor_pair & np.isin(candidate_team, ["H", "A"])
     out["transition_trust_reason"] = np.select(
@@ -4228,6 +4430,292 @@ def apply_interaction_attempted_pass_switch(
             output[switch_start:end][writable] = current
         position = end
     output[~in_play] = "X"
+    return output.astype("<U1")
+
+
+def add_local_short_touch_features(
+    features: pd.DataFrame,
+    *,
+    lookback_frames: int = 12,
+    lookahead_frames: int = 18,
+    near_ball_distance_m: float = 3.5,
+) -> pd.DataFrame:
+    """Build bounded evidence for a possible local opponent short touch.
+
+    The existing reception features are intentionally broad, but a projected
+    receiver can be available when the geometric control team is not.  This
+    layer keeps that distinction explicit and combines five observations:
+
+    * opposing-player proximity to the ball;
+    * ball contact/motion change, including direction change;
+    * approach evidence before the contact (backtracking);
+    * short forward candidate persistence after the contact;
+    * a plausible live-play scenario.
+
+    It does not assign possession and it does not use labels.  The resulting
+    columns are consumed only by the local attribution ablation below.  A
+    short touch is evidence that an interval deserves a local switch test,
+    not evidence that the opponent automatically owns the ball.
+    """
+    out = features.copy()
+    n_frames = len(out)
+    index = out.index
+
+    def numeric(name: str, default: float = np.nan) -> np.ndarray:
+        return pd.to_numeric(
+            out.get(name, pd.Series(default, index=index)), errors="coerce"
+        ).to_numpy(float)
+
+    def boolean(name: str) -> np.ndarray:
+        return out.get(name, pd.Series(False, index=index)).fillna(False).to_numpy(bool)
+
+    def team_values(name: str) -> np.ndarray:
+        return out.get(name, pd.Series(None, index=index, dtype=object)).to_numpy(object)
+
+    control = team_values("reception_control_team_geometry")
+    projected = team_values("projected_receiver_team")
+    likely = team_values("likely_receiver_team")
+    candidate = np.where(np.isin(control, ["H", "A"]), control, None)
+    candidate = np.where(
+        np.isin(candidate, ["H", "A"]),
+        candidate,
+        np.where(np.isin(projected, ["H", "A"]), projected, None),
+    )
+    candidate = np.where(
+        np.isin(candidate, ["H", "A"]),
+        candidate,
+        np.where(np.isin(likely, ["H", "A"]), likely, None),
+    )
+
+    direction = np.clip(np.nan_to_num(numeric("ball_direction_change_rad"), nan=0.0) / 1.2, 0.0, 1.0)
+    deceleration = np.clip(
+        np.nan_to_num(numeric("reception_ball_deceleration_mps"), nan=0.0) / 4.0,
+        0.0,
+        1.0,
+    )
+    kick_change = np.clip(
+        np.nan_to_num(numeric("kick_episode_contact_change"), nan=0.0), 0.0, 1.0
+    )
+    contact = np.maximum.reduce([direction, deceleration, kick_change])
+    contact = np.maximum(
+        contact,
+        boolean("direction_change_pass_or_deflection_candidate").astype(float),
+    )
+
+    distance_h = numeric("nearest_h_distance_m", 99.0)
+    distance_a = numeric("nearest_a_distance_m", 99.0)
+    candidate_distance = np.where(candidate == "H", distance_h, np.where(candidate == "A", distance_a, 99.0))
+    proximity = np.clip(1.0 - np.nan_to_num(candidate_distance, nan=99.0) / float(near_ball_distance_m), 0.0, 1.0)
+    near = np.isfinite(candidate_distance) & (candidate_distance <= float(near_ball_distance_m))
+
+    lookback = max(1, int(lookback_frames))
+    lookahead = max(1, int(lookahead_frames))
+    candidate_distance_series = pd.Series(candidate_distance, index=index, dtype=float)
+    backtrack_distance = candidate_distance_series.shift(lookback).to_numpy(float) - candidate_distance
+    closing = np.where(
+        candidate == "H",
+        np.nan_to_num(numeric("nearest_h_closing_rate_mps"), nan=0.0),
+        np.where(candidate == "A", np.nan_to_num(numeric("nearest_a_closing_rate_mps"), nan=0.0), 0.0),
+    )
+    backtrack = np.clip(np.nan_to_num(backtrack_distance, nan=0.0) / 3.0, 0.0, 1.0)
+    backtrack = np.maximum(backtrack, np.clip(closing / 3.0, 0.0, 1.0))
+    backtrack = np.maximum(
+        backtrack,
+        np.where(
+            candidate == "H",
+            np.nan_to_num(numeric("h_receiver_closing_speed_mps"), nan=0.0) / 3.0,
+            np.where(candidate == "A", np.nan_to_num(numeric("a_receiver_closing_speed_mps"), nan=0.0) / 3.0, 0.0),
+        ).clip(0.0, 1.0),
+    )
+
+    # Forward persistence is deliberately short.  It asks whether the same
+    # candidate remains geometrically plausible for a few frames after the
+    # contact, rather than demanding a long anchor run that would miss a
+    # first-time touch.
+    forward_count = np.zeros(n_frames, dtype=float)
+    forward_fraction = np.zeros(n_frames, dtype=float)
+    for position in range(n_frames):
+        team = candidate[position]
+        if team not in {"H", "A"}:
+            continue
+        end = min(n_frames, position + lookahead + 1)
+        future_positions = np.arange(position, end)
+        same_candidate = candidate[future_positions] == team
+        future_distance = candidate_distance[future_positions]
+        valid = same_candidate & np.isfinite(future_distance) & (future_distance <= float(near_ball_distance_m))
+        forward_count[position] = float(valid.sum())
+        forward_fraction[position] = float(valid.mean()) if len(valid) else 0.0
+
+    scenario = out.get(
+        "scenario_context_causal",
+        out.get("scenario_context", pd.Series("UNKNOWN", index=index)),
+    ).fillna("UNKNOWN").to_numpy(object)
+    live = np.isin(
+        scenario,
+        [
+            "BALL_IN_FLIGHT", "CONTESTED", "RECEPTION_CANDIDATE",
+            "MISCONTROL_CANDIDATE", "PRESSURED_CONTROL", "CONTROLLED",
+            "UNKNOWN", "TRANSITION_CANDIDATE", "DEFLECTION_CANDIDATE",
+        ],
+    )
+    out["local_short_touch_candidate_team"] = candidate
+    out["local_short_touch_candidate_distance_m"] = candidate_distance
+    out["local_short_touch_proximity_score"] = proximity
+    out["local_short_touch_contact_score"] = contact
+    out["local_short_touch_backtrack_support"] = backtrack
+    out["local_short_touch_forward_count"] = forward_count
+    out["local_short_touch_forward_fraction"] = forward_fraction
+    out["local_short_touch_live_play"] = live
+    out["local_short_touch_support_score"] = (
+        0.30 * contact
+        + 0.25 * proximity
+        + 0.20 * backtrack
+        + 0.25 * np.clip(forward_fraction / 0.35, 0.0, 1.0)
+    )
+    out["local_short_touch_eligible"] = (
+        live
+        & np.isin(candidate, ["H", "A"])
+        & near
+        & (contact >= 0.35)
+        & (backtrack >= 0.15)
+        & (forward_count >= 2.0)
+        & (forward_fraction >= 0.10)
+        & (out["local_short_touch_support_score"].to_numpy(float) >= 0.42)
+    )
+    return out
+
+
+def resolve_local_short_touch_attribution(
+    features: pd.DataFrame,
+    base_labels: np.ndarray,
+    *,
+    minimum_episode_frames: int = 2,
+    maximum_episode_frames: int = 12,
+    maximum_event_gap_frames: int = 1,
+    prior_team_lookback_frames: int = 30,
+    require_return_to_prior_team: bool = True,
+    minimum_support_score: float = 0.42,
+    minimum_contact_score: float = 0.35,
+    minimum_proximity_score: float = 0.0,
+    minimum_forward_count: float = 2.0,
+    minimum_forward_fraction: float = 0.10,
+) -> np.ndarray:
+    """Apply only a bounded, evidence-backed local short-touch handoff.
+
+    This is intentionally not a global threshold change and not a
+    ``CONTESTED -> H/A`` rewrite.  It searches for an eligible opposing
+    candidate, backtracks to the prior live team, and forward-checks that the
+    candidate episode is short and returns to the prior team.  D/X frames and
+    high-confidence anchors are never rewritten.  If the evidence does not
+    establish a short episode, the base resolver is retained.
+    """
+    output = np.asarray(base_labels, dtype="<U1").copy()
+    if len(output) != len(features):
+        raise ValueError("features and label arrays must have the same length")
+    n_frames = len(features)
+    graded = graded_mask(n_frames)
+
+    candidate = features.get(
+        "local_short_touch_candidate_team",
+        pd.Series(None, index=features.index, dtype=object),
+    ).to_numpy(object)
+    eligible = features.get(
+        "local_short_touch_eligible", pd.Series(False, index=features.index)
+    ).fillna(False).to_numpy(bool).copy()
+    support = pd.to_numeric(
+        features.get("local_short_touch_support_score", pd.Series(0.0, index=features.index)),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    contact = pd.to_numeric(
+        features.get("local_short_touch_contact_score", pd.Series(0.0, index=features.index)),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    proximity = pd.to_numeric(
+        features.get("local_short_touch_proximity_score", pd.Series(0.0, index=features.index)),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    forward_count = pd.to_numeric(
+        features.get("local_short_touch_forward_count", pd.Series(0.0, index=features.index)),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    forward_fraction = pd.to_numeric(
+        features.get("local_short_touch_forward_fraction", pd.Series(0.0, index=features.index)),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    eligible &= (
+        (support >= float(minimum_support_score))
+        & (contact >= float(minimum_contact_score))
+        & (proximity >= float(minimum_proximity_score))
+        & (forward_count >= float(minimum_forward_count))
+        & (forward_fraction >= float(minimum_forward_fraction))
+    )
+    anchor = features.get(
+        "selected_anchor_team",
+        features.get("anchor_team", pd.Series(None, index=features.index, dtype=object)),
+    ).to_numpy(object)
+    anchor_confidence = pd.to_numeric(
+        features.get(
+            "selected_anchor_confidence",
+            features.get("anchor_confidence_score", pd.Series(0.0, index=features.index)),
+        ),
+        errors="coerce",
+    ).fillna(0.0).to_numpy(float)
+    hard_anchor = np.isin(anchor, ["H", "A"]) & (anchor_confidence >= 0.85)
+
+    positions = np.flatnonzero(eligible & graded & np.isin(candidate, ["H", "A"]))
+    if not len(positions):
+        output[~graded] = "X"
+        return output
+
+    groups: list[tuple[int, int]] = []
+    start = previous = int(positions[0])
+    for position in positions[1:]:
+        position = int(position)
+        if position - previous <= int(maximum_event_gap_frames) + 1:
+            previous = position
+            continue
+        groups.append((start, previous + 1))
+        start = previous = position
+    groups.append((start, previous + 1))
+
+    def prior_live_team(position: int) -> str | None:
+        left = max(0, position - int(prior_team_lookback_frames))
+        for cursor in range(position - 1, left - 1, -1):
+            if output[cursor] in {"H", "A"}:
+                return str(output[cursor])
+        return None
+
+    for start, end in groups:
+        team_values = [team for team in candidate[start:end] if team in {"H", "A"}]
+        if not team_values:
+            continue
+        team = str(pd.Series(team_values, dtype=object).mode().iloc[0])
+        prior = prior_live_team(start)
+        if prior not in {"H", "A"} or prior == team:
+            continue
+        episode_positions = np.flatnonzero(
+            (candidate[start:end] == team) & eligible[start:end] & graded[start:end]
+        )
+        if len(episode_positions) < int(minimum_episode_frames):
+            continue
+        episode_start = start + int(episode_positions[0])
+        episode_end = min(start + int(episode_positions[-1]) + 1, episode_start + int(maximum_episode_frames))
+        if require_return_to_prior_team:
+            return_end = min(n_frames, episode_end + int(prior_team_lookback_frames))
+            if not np.any(output[episode_end:return_end] == prior):
+                continue
+        writable = (
+            graded[episode_start:episode_end]
+            & ~np.isin(output[episode_start:episode_end], ["D", "X"])
+            & ~hard_anchor[episode_start:episode_end]
+        )
+        # Require that the episode actually contains strong local evidence;
+        # this avoids using the mode of a noisy candidate sequence.
+        if float(np.max(support[episode_start:episode_end])) < float(minimum_support_score):
+            continue
+        output[episode_start:episode_end][writable] = team
+
+    output[~graded] = "X"
     return output.astype("<U1")
 
 

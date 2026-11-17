@@ -39,6 +39,8 @@ from possession_lab.decoder_experiments import (
     add_contact_arrival_coherence_features,
     add_scenario_episode_features,
     add_missing_ball_cause_features,
+    add_missing_ball_path_hypothesis_features,
+    add_local_short_touch_features,
     add_transition_hypothesis_features,
     add_transition_boundary_hypotheses,
     add_transition_role_evidence,
@@ -107,6 +109,10 @@ def build_engineered_features(
     temporal = add_ball_kick_episode_features(temporal, rules)
     temporal = add_long_ball_origin_anchor_features(temporal)
     temporal = add_missing_ball_cause_features(temporal)
+    # Compare straight, player-supported deflection, and dead/resting path
+    # explanations inside two-sided gaps before transition hypotheses are
+    # built. This is evidence only; the resolver still owns H/A/D/X.
+    temporal = add_missing_ball_path_hypothesis_features(temporal)
     # Scenario detection has an explicit observation pass before the anchor
     # hierarchy. This records what the raw motion/visibility/restart evidence
     # says before any selected team anchor exists; it is an audit lane, not a
@@ -132,6 +138,10 @@ def build_engineered_features(
     temporal = add_transition_hypothesis_features(temporal)
     temporal = add_transition_boundary_hypotheses(temporal)
     temporal = add_transition_role_evidence(temporal)
+    # Keep short-touch attribution as an auditable local evidence channel.
+    # The canonical resolver does not consume it unless a separate experiment
+    # explicitly opts in to the bounded handoff function.
+    temporal = add_local_short_touch_features(temporal)
     temporal = add_scenario_episode_features(temporal)
     return add_scenario_evidence_features(
         temporal,

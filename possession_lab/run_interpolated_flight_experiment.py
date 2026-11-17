@@ -16,6 +16,7 @@ from possession_lab.decoder_experiments import (
     low_motion_dead_ball_evidence,
     retain_no_switch_intervals,
     local_touch_viterbi,
+    resolve_local_short_touch_attribution,
     retain_weak_contact_arrival_handoffs,
     apply_interaction_attempted_pass_switch,
     restart_provisional_labels,
@@ -488,6 +489,8 @@ def main() -> None:
         forward_settle_output = ROOT / "evaluation" / "results" / f"{name}.csv"
         model.write_submission(forward_settle_output, forward_settle_labels)
         print(forward_settle_output)
+        if name == "diagnostic_forward_settling_dead_ball":
+            promoted_labels = forward_settle_labels
 
     # Local short-touch/flight path diagnostic.  This is deliberately kept
     # separate from the promoted resolver: it compares a no-switch path, a
@@ -509,6 +512,50 @@ def main() -> None:
     )
     model.write_submission(local_touch_output, local_touch_labels)
     print(local_touch_output)
+
+    # Narrow local short-touch attribution diagnostic. Unlike the bounded
+    # Viterbi comparison above, this uses an explicit opposing-candidate
+    # episode: proximity + contact/direction change + backward approach + a
+    # few frames of forward persistence. It may rewrite only that local live
+    # episode, never a whole contested interval, D/X, or a hard anchor.
+    local_short_touch_output = (
+        ROOT / "evaluation" / "results" / "diagnostic_local_short_touch_attribution.csv"
+    )
+    local_short_touch_labels = resolve_local_short_touch_attribution(
+        temporal,
+        promoted_labels,
+        minimum_episode_frames=2,
+        maximum_episode_frames=12,
+        maximum_event_gap_frames=1,
+        prior_team_lookback_frames=30,
+        require_return_to_prior_team=True,
+    )
+    model.write_submission(local_short_touch_output, local_short_touch_labels)
+    print(local_short_touch_output)
+
+    # Stronger sensitivity check: require a more substantial contact score,
+    # proximity, and three forward candidate frames. This is still local and
+    # label-free, but is a better test of whether the signal survives stricter
+    # ambiguity control.
+    local_short_touch_strict_output = (
+        ROOT / "evaluation" / "results" / "diagnostic_local_short_touch_attribution_strict.csv"
+    )
+    local_short_touch_strict_labels = resolve_local_short_touch_attribution(
+        temporal,
+        promoted_labels,
+        minimum_episode_frames=3,
+        maximum_episode_frames=8,
+        maximum_event_gap_frames=1,
+        prior_team_lookback_frames=30,
+        require_return_to_prior_team=True,
+        minimum_support_score=0.60,
+        minimum_contact_score=0.50,
+        minimum_proximity_score=0.30,
+        minimum_forward_count=3.0,
+        minimum_forward_fraction=0.15,
+    )
+    model.write_submission(local_short_touch_strict_output, local_short_touch_strict_labels)
+    print(local_short_touch_strict_output)
 
     # Keep a compact, label-free event ledger beside the experiment.  It is
     # useful for inspecting whether a local decoder changed nothing because
@@ -1276,6 +1323,18 @@ def main() -> None:
         "missing_ball_cause_control_score", "missing_ball_cause_deflection_score",
         "missing_ball_cause_crowd_score", "missing_ball_cause_visibility_score",
         "missing_ball_cause_observation_count",
+        "missing_ball_path_direction_change_rad",
+        "missing_ball_path_plausible_direction_change",
+        "missing_ball_path_straight_score",
+        "missing_ball_path_deflection_score",
+        "missing_ball_path_dead_resting_score",
+        "missing_ball_path_player_support_score",
+        "missing_ball_path_uncertainty_m",
+        "missing_ball_path_reliability",
+        "missing_ball_path_hypothesis",
+        "missing_ball_path_hypothesis_confidence",
+        "missing_ball_path_hypothesis_margin",
+        "missing_ball_path_hypothesis_uncertainty",
         "kick_episode_id", "kick_episode_distance_m",
         "kick_episode_contact_change", "kick_episode_observation_source",
         "kick_episode_kalman_supported",
