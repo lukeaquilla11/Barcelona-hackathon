@@ -92,6 +92,10 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
   observation. It is exposed in the scenario-confidence and transition-ledger audits, but it did
   not change any full-length labels or public metrics in the current run, so it is not promoted as
   a hard handoff rule;
+- `diagnostic_local_touch_viterbi` — bounded local Viterbi over control and
+  short-touch paths. It remains an appendix diagnostic: it changed no labels
+  and tied the promoted public result, showing that the remaining gap is
+  contact/arrival/control evidence rather than the decoder alone;
 - Kinson's supervised classifier and decoder are not runner arguments. They remain in
   [SUPERVISED_TRAINING.md](./SUPERVISED_TRAINING.md) and the appendix as a separately ranked
   experiment because their fitted weights depend on event-derived labels; they are not part of the

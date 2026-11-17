@@ -619,3 +619,21 @@ label remained A and the internal hypothesis was `NO_SWITCH`; counting an
 interaction as a switch would not solve that failure and could make it worse.
 The signal remains available for private-match auditing, but is not promoted.
 
+## Local short-touch / flight-path diagnostic
+
+The reviewed disagreements also suggested a bounded local decoder: a real
+handoff can be delayed, while a nearest-player artefact can create an early
+false handoff. We therefore tested a four-state local Viterbi path over
+`H_CONTROL`, `A_CONTROL`, `H_SHORT_TOUCH`, and `A_SHORT_TOUCH`. It used the
+existing contact, arrival, flight, contested, and later-control evidence, while
+protecting D/X frames and strong anchors. Public labels were used only after
+inference for evaluation.
+
+The diagnostic changed **0** full-length frames, including the four reviewed
+windows, and tied the promoted reference at Macro-F1 **0.8917**, Spell-F1
+**0.6207**, and Transition F1@25 **0.4571**. This is a useful negative result:
+Viterbi can express the short-touch hypothesis, but it cannot manufacture the
+missing contact/control signal. The diagnostic remains appendix-only; the next
+useful improvement is better arrival and post-touch control evidence on the
+private full match, not another decoder-threshold sweep.
+

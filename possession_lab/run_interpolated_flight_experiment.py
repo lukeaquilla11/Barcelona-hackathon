@@ -13,6 +13,7 @@ from possession_lab.decoder_experiments import (
     dead_ball_boundary_evidence,
     low_motion_dead_ball_evidence,
     retain_no_switch_intervals,
+    local_touch_viterbi,
     retain_weak_contact_arrival_handoffs,
     apply_interaction_attempted_pass_switch,
     restart_provisional_labels,
@@ -419,6 +420,61 @@ def main() -> None:
     )
     model.write_submission(no_switch_output, no_switch_labels)
     print(no_switch_output)
+
+    # Local short-touch/flight path diagnostic.  This is deliberately kept
+    # separate from the promoted resolver: it compares a no-switch path, a
+    # short-touch path, and a persistent-control path inside bounded activity
+    # windows, then backtracks to choose the most coherent boundary.  It does
+    # not read public labels and cannot override hard D/X or anchor evidence.
+    local_touch_output = (
+        ROOT / "evaluation" / "results" / "diagnostic_local_touch_viterbi.csv"
+    )
+    local_touch_labels = local_touch_viterbi(
+        temporal,
+        no_switch_labels,
+        context_frames=90,
+        maximum_window_frames=240,
+        minimum_contact_score=0.35,
+        switch_penalty=4.0,
+        short_touch_penalty=1.75,
+        control_bonus=2.0,
+    )
+    model.write_submission(local_touch_output, local_touch_labels)
+    print(local_touch_output)
+
+    # Keep a compact, label-free event ledger beside the experiment.  It is
+    # useful for inspecting whether a local decoder changed nothing because
+    # the evidence was absent, or because a hard anchor/base path dominated.
+    audit_columns = [
+        "frame", "scenario_context_causal", "transition_hypothesis_interval_id",
+        "transition_hypothesis_state", "transition_hypothesis_p_H",
+        "transition_hypothesis_p_A", "transition_hypothesis_p_no_switch",
+        "transition_hypothesis_p_contested", "transition_candidate_team",
+        "reception_control_team_geometry", "likely_receiver_team",
+        "projected_receiver_team", "reception_score_H", "reception_score_A",
+        "h_arrival_consensus_score", "a_arrival_consensus_score",
+        "controlled_reception_signal",
+        "short_touch_signal", "soft_reception_event_candidate",
+        "reception_ball_deceleration_mps", "ball_direction_change_rad",
+        "kick_episode_contact_change", "h_contact_arrival_coherence",
+        "a_contact_arrival_coherence", "flight_origin_anchor_team",
+        "flight_origin_anchor_active", "flight_origin_anchor_confidence",
+        "selected_anchor_team",
+        "selected_anchor_confidence", "anchor_team", "anchor_confidence_score",
+    ]
+    audit_columns = [column for column in audit_columns if column in temporal.columns]
+    audit_frame = temporal.loc[
+        (pd.to_numeric(
+            temporal.get("transition_hypothesis_interval_id", pd.Series(-1, index=temporal.index)),
+            errors="coerce",
+        ).fillna(-1) >= 0)
+        | temporal.get("short_touch_signal", pd.Series(False, index=temporal.index)).fillna(False)
+        | temporal.get("controlled_reception_signal", pd.Series(False, index=temporal.index)).fillna(False),
+        audit_columns,
+    ]
+    audit_output = ROOT / "evaluation" / "reports" / "transition_event_signal_audit.csv"
+    audit_frame.to_csv(audit_output, index=False)
+    print(audit_output)
 
     # Diagnostic interaction/attempted-pass experiment.  This restores a
     # proposed H/A handoff suppressed by NO_SWITCH only when the candidate

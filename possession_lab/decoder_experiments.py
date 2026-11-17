@@ -3888,6 +3888,271 @@ def apply_interaction_attempted_pass_switch(
     return output.astype("<U1")
 
 
+def local_touch_viterbi(
+    features: pd.DataFrame,
+    base_labels: np.ndarray,
+    *,
+    context_frames: int = 90,
+    maximum_window_frames: int = 240,
+    minimum_contact_score: float = 0.35,
+    switch_penalty: float = 4.0,
+    short_touch_penalty: float = 1.75,
+    control_bonus: float = 2.0,
+    minimum_anchor_confidence: float = 0.85,
+) -> np.ndarray:
+    """Decode local contact/flight paths with bounded backtracking.
+
+    The ordinary interval resolver asks whether a proposed H/A run should be
+    retained.  That is insufficient when a real handoff is late in the base
+    labels, or when a contact looks like a handoff but is only a deflection.
+    This diagnostic therefore compares four local states:
+
+    ``H_CONTROL``, ``A_CONTROL``, ``H_SHORT_TOUCH``, and ``A_SHORT_TOUCH``.
+
+    A short-touch state is only available where contact and a plausible team
+    candidate are observed.  Strong anchors and D/X frames remain fixed.  A
+    dynamic programme is run only around activity/contact intervals, so this
+    is a constrained local path decoder rather than a replacement for the
+    rule-based pipeline or a global label smoother.
+
+    The public labels are not read here.  This is intentionally an ablation:
+    it tests whether explicit short-touch paths and retrospective boundary
+    selection provide a useful signal before any promotion.
+    """
+    output = np.asarray(base_labels, dtype="<U1").copy()
+    n_frames = len(features)
+    if len(output) != n_frames:
+        raise ValueError("features and label arrays must have the same length")
+    if n_frames == 0:
+        return output
+
+    graded = graded_mask(n_frames)
+
+    def numeric(name: str, default: float = 0.0) -> np.ndarray:
+        return pd.to_numeric(
+            features.get(name, pd.Series(default, index=features.index)),
+            errors="coerce",
+        ).fillna(default).to_numpy(float)
+
+    def boolean(name: str) -> np.ndarray:
+        return features.get(
+            name, pd.Series(False, index=features.index)
+        ).fillna(False).to_numpy(bool)
+
+    def team_values(name: str, fallback: str | None = None) -> np.ndarray:
+        return features.get(
+            name, pd.Series(fallback, index=features.index, dtype=object)
+        ).to_numpy(object)
+
+    scenario = features.get(
+        "scenario_context_causal",
+        features.get("scenario_context", pd.Series("UNKNOWN", index=features.index)),
+    ).fillna("UNKNOWN").to_numpy(object)
+    live = np.isin(
+        scenario,
+        [
+            "BALL_IN_FLIGHT", "CONTESTED", "RECEPTION_CANDIDATE",
+            "MISCONTROL_CANDIDATE", "PRESSURED_CONTROL", "CONTROLLED",
+            "UNKNOWN", "TRANSITION_CANDIDATE", "DEFLECTION_CANDIDATE",
+        ],
+    )
+
+    direction = numeric("ball_direction_change_rad")
+    deceleration = numeric("reception_ball_deceleration_mps")
+    contact = np.maximum(
+        np.clip(direction / 1.2, 0.0, 1.0),
+        np.clip(deceleration / 4.0, 0.0, 1.0),
+    )
+    contact = np.maximum(contact, np.clip(numeric("kick_episode_contact_change"), 0.0, 1.0))
+    candidate = team_values(
+        "reception_control_team_geometry",
+        fallback=None,
+    )
+    candidate = np.where(np.isin(candidate, ["H", "A"]), candidate, None)
+    likely = team_values("likely_receiver_team", fallback=None)
+    candidate = np.where(
+        np.isin(candidate, ["H", "A"]),
+        candidate,
+        np.where(np.isin(likely, ["H", "A"]), likely, None),
+    )
+
+    short_touch = boolean("short_touch_signal") | boolean("soft_reception_event_candidate")
+    short_touch &= contact >= float(minimum_contact_score)
+    controlled = boolean("controlled_reception_signal") | boolean("sustained_reception_signal")
+    controlled_score = numeric("controlled_reception_signal_score")
+    reception_h = numeric("reception_score_H")
+    reception_a = numeric("reception_score_A")
+    arrival_h = numeric("h_arrival_consensus_score")
+    arrival_a = numeric("a_arrival_consensus_score")
+    trust_h = numeric("transition_trust_H")
+    trust_a = numeric("transition_trust_A")
+    coherence_h = numeric("h_contact_arrival_coherence")
+    coherence_a = numeric("a_contact_arrival_coherence")
+    p_no_switch = numeric("transition_hypothesis_p_no_switch", 1.0)
+    p_contested = numeric("transition_hypothesis_p_contested")
+    interval_id = numeric("transition_hypothesis_interval_id", -1).astype(int)
+    anchor = team_values("selected_anchor_team", fallback=None)
+    anchor_confidence = numeric("selected_anchor_confidence")
+    if "selected_anchor_confidence" not in features:
+        anchor_confidence = numeric("anchor_confidence_score")
+    hard_anchor = np.isin(anchor, ["H", "A"]) & (
+        anchor_confidence >= float(minimum_anchor_confidence)
+    )
+    flight_origin_team = team_values("flight_origin_anchor_team", fallback=None)
+    flight_origin_active = boolean("flight_origin_anchor_active")
+    flight_origin_confidence = np.clip(
+        numeric("flight_origin_anchor_confidence"), 0.0, 1.0
+    )
+
+    # Candidate activity is intentionally broad enough to include a delayed
+    # true switch, not just the frame where the base labels finally change.
+    label_change = np.zeros(n_frames, dtype=bool)
+    label_change[1:] = (
+        np.isin(output[1:], ["H", "A"])
+        & np.isin(output[:-1], ["H", "A"])
+        & (output[1:] != output[:-1])
+    )
+    active = graded & live & (
+        (interval_id >= 0)
+        | (contact >= float(minimum_contact_score))
+        | short_touch
+        | controlled
+        | flight_origin_active
+        | label_change
+    )
+
+    # Convert activity positions into bounded local windows.  Merge nearby
+    # windows so forward evidence can influence the earlier boundary once,
+    # without allowing a full-match global rewrite.
+    positions = np.flatnonzero(active)
+    windows: list[tuple[int, int]] = []
+    cursor = 0
+    while cursor < len(positions):
+        start = int(positions[cursor])
+        end = start
+        while cursor + 1 < len(positions) and int(positions[cursor + 1]) <= end + 3:
+            cursor += 1
+            end = int(positions[cursor])
+        left = max(0, start - int(context_frames))
+        right = min(n_frames, end + int(context_frames) + 1)
+        if right - left > int(maximum_window_frames):
+            centre = (start + end) // 2
+            half = int(maximum_window_frames) // 2
+            left = max(0, centre - half)
+            right = min(n_frames, left + int(maximum_window_frames))
+            left = max(0, right - int(maximum_window_frames))
+        if windows and left <= windows[-1][1] + 3:
+            windows[-1] = (windows[-1][0], max(windows[-1][1], right))
+        else:
+            windows.append((left, right))
+        cursor += 1
+
+    # The local decoder uses control and short-touch variants of the same
+    # output team.  The short state gets a lower handoff cost, but only emits
+    # where a contact-compatible candidate exists.
+    state_names = ("H_CONTROL", "A_CONTROL", "H_SHORT_TOUCH", "A_SHORT_TOUCH")
+    state_team = np.array(["H", "A", "H", "A"], dtype=object)
+    state_short = np.array([False, False, True, True], dtype=bool)
+
+    for left, right in windows:
+        # Do not allow a context window to rewrite a hard D/X frame or a
+        # strong anchor.  It can still use those observations at the edge.
+        local_n = right - left
+        emission = np.full((local_n, len(state_names)), -np.inf, dtype=float)
+        for local in range(local_n):
+            frame = left + local
+            if not graded[frame] or output[frame] in {"D", "X"}:
+                continue
+            for state_index, team in enumerate(state_team):
+                is_short = bool(state_short[state_index])
+                if hard_anchor[frame] and anchor[frame] != team:
+                    continue
+                if is_short and not short_touch[frame]:
+                    continue
+
+                team_reception = reception_h[frame] if team == "H" else reception_a[frame]
+                team_arrival = arrival_h[frame] if team == "H" else arrival_a[frame]
+                team_trust = trust_h[frame] if team == "H" else trust_a[frame]
+                team_coherence = coherence_h[frame] if team == "H" else coherence_a[frame]
+                score = 0.0
+                if output[frame] == team:
+                    score += 2.4
+                else:
+                    score -= 0.45
+                score += 1.15 * float(np.clip(team_reception, 0.0, 1.0))
+                score += 0.90 * float(np.clip(team_arrival, 0.0, 1.0))
+                score += 0.75 * float(np.clip(team_trust, 0.0, 1.0))
+                score += 0.85 * float(np.clip(team_coherence, 0.0, 1.0))
+                if candidate[frame] == team:
+                    score += 0.95 * float(np.clip(contact[frame], 0.0, 1.0))
+                if flight_origin_active[frame] and flight_origin_team[frame] == team:
+                    # The team that launched a flight remains the continuity
+                    # hypothesis until a later controlled reception proves a
+                    # handoff.  This is especially important for a kick that
+                    # is visible but immediately loses its receiver.
+                    score += 1.40 * float(flight_origin_confidence[frame])
+                if controlled[frame] and candidate[frame] == team:
+                    score += float(control_bonus)
+                if is_short:
+                    score += 0.80 * float(np.clip(contact[frame], 0.0, 1.0))
+                    score -= float(short_touch_penalty)
+                # A contested/no-switch observation is a cost against an
+                # unsupported team switch, not a hard label instruction.
+                if candidate[frame] != team:
+                    score -= 0.75 * float(np.clip(p_contested[frame], 0.0, 1.0))
+                if p_no_switch[frame] >= 0.65 and output[frame] != team:
+                    score -= 0.90 * float(np.clip(p_no_switch[frame], 0.0, 1.0))
+                emission[local, state_index] = score
+
+        if not np.isfinite(emission).any():
+            continue
+        dp = np.full_like(emission, -np.inf)
+        back = np.zeros((local_n, len(state_names)), dtype=np.int8)
+        for state_index, team in enumerate(state_team):
+            if np.isfinite(emission[0, state_index]):
+                dp[0, state_index] = emission[0, state_index]
+                if left and output[left - 1] == team:
+                    dp[0, state_index] += 1.0
+
+        for local in range(1, local_n):
+            frame = left + local
+            for current in range(len(state_names)):
+                if not np.isfinite(emission[local, current]):
+                    continue
+                candidates = np.full(len(state_names), -np.inf, dtype=float)
+                for previous in range(len(state_names)):
+                    if not np.isfinite(dp[local - 1, previous]):
+                        continue
+                    if state_team[previous] == state_team[current]:
+                        transition = 0.0
+                    elif state_short[current]:
+                        transition = -float(short_touch_penalty)
+                    else:
+                        transition = -float(switch_penalty)
+                    if state_short[previous] and not state_short[current]:
+                        transition += 0.35
+                    candidates[previous] = dp[local - 1, previous] + transition
+                best = int(np.argmax(candidates))
+                if np.isfinite(candidates[best]):
+                    back[local, current] = best
+                    dp[local, current] = candidates[best] + emission[local, current]
+
+        last = int(np.argmax(dp[-1]))
+        if not np.isfinite(dp[-1, last]):
+            continue
+        path = np.empty(local_n, dtype=np.int8)
+        for local in range(local_n - 1, -1, -1):
+            path[local] = last
+            last = int(back[local, last]) if local else last
+        for local, state_index in enumerate(path):
+            frame = left + local
+            if graded[frame] and output[frame] not in {"D", "X"} and not hard_anchor[frame]:
+                output[frame] = state_team[state_index]
+
+    output[~graded] = "X"
+    return output.astype("<U1")
+
+
 def apply_switch_confirmation_hysteresis(
     features: pd.DataFrame,
     base_labels: np.ndarray,
