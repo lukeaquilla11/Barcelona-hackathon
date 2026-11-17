@@ -123,9 +123,15 @@ This creates three transition families rather than only `H ↔ A`:
    during flight, but it does not decide landing ownership.
 
 The interval resolver then applies only bounded, evidence-backed changes. It
-protects `X`, leaves `CONTESTED` unresolved, and uses forward settling evidence
-to prevent a broad `ENTER_D` hypothesis from suppressing an entire restart
-phase. The safe dead-ball policy is:
+protects `X`, leaves `CONTESTED` unresolved, and avoids broad `D` rewrites. The
+conservative hybrid resolver is:
+
+`dead-ball hypothesis + forward settling → ENTER_D → restart/control release`.
+
+In other words, a dead-ball hypothesis is not enough on its own: the forward
+scene must also settle before `ENTER_D` can affect the output, and the hold is
+released by restart activation or persistent control. The safe dead-ball
+policy is therefore:
 
 `dead-ball hypothesis + forward settling → ENTER_D`
 
@@ -144,14 +150,34 @@ The runner rebuilds the evidence table from the supplied raw tactical data and
 Smart Tags. It produces the same candidate labels and reports used in the
 notebooks; ground truth is read only by the evaluator after inference.
 
+```mermaid
+flowchart TD
+    R[Raw tactical tracking<br/>+ Smart Tagging context]
+    F[Physical and missing-ball features<br/>speed · direction · arrival · pressure · activity]
+    S[Football scenarios<br/>controlled · flight · contested · restart · dead]
+    A[Conservative anchors<br/>stable team control]
+    P[Missing-ball path hypotheses<br/>straight · deflection · dead/resting]
+    T[Transition hypotheses<br/>KEEP · SWITCH H/A · ENTER_D<br/>RESTART H/A · CONTESTED]
+    Q[Bounded interval resolver<br/>backward + forward evidence]
+    D[Dead-ball policy<br/>forward settling → ENTER_D<br/>restart/control → release]
+    O[Final frame labels<br/>H / A / D / X]
+
+    R --> F
+    F --> S
+    F --> P
+    S --> A
+    P --> T
+    A --> T
+    S --> T
+    T --> Q
+    D --> Q
+    Q --> D
+    D --> O
 ```
-raw tracking + phase context
-  → physical/missing-ball features
-  → scenarios and conservative anchors
-  → transition hypotheses and interval evidence
-  → bounded dead-ball onset/release
-  → H/A/D/X submission
-```
+
+The path branch does not directly assign possession. It supplies uncertainty
+and candidate receiver/contact evidence to the transition hypotheses. The
+resolver is the only layer allowed to change the final interval label.
 
 The current public reference is the forward terminal-flight and scene-settling
 dead-ball policy combined with the no-switch interval resolver. The safer
