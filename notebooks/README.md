@@ -14,11 +14,10 @@ scenarios → anchors → transition hypotheses → final submission → audit**
 9. [07_probability_transition_model.ipynb](./07_probability_transition_model.ipynb) — compare KEEP, SWITCH, ENTER_D, RESTART and CONTESTED hypotheses.
 10. [08_run_pipeline.ipynb](./08_run_pipeline.ipynb) — run the promoted bounded three-family hybrid and write `final_submission.csv`.
 11. [08b_model_evaluation.ipynb](./08b_model_evaluation.ipynb) — show a small set of public disagreement diagrams and turn them into case ideas.
-12. [09_experimental_results.ipynb](./09_experimental_results.ipynb) — optional comparison of alternative policies; it is not needed to produce the final CSV.
-
 The optional source studies are in [appendix/](./appendix/):
 [04c_alternate_ball_observations.ipynb](./appendix/04c_alternate_ball_observations.ipynb)
-and [05_independent_observation_baseline.ipynb](./appendix/05_independent_observation_baseline.ipynb).
+[05_independent_observation_baseline.ipynb](./appendix/05_independent_observation_baseline.ipynb)
+and [09_experimental_results.ipynb](./appendix/09_experimental_results.ipynb).
 They are not silently merged into the final labels.
 
 Every notebook calls modular functions from [../possession_lab/](../possession_lab/).

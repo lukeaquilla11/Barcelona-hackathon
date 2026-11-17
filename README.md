@@ -24,9 +24,7 @@ second implementation in notebook cells.
 9. [07_probability_transition_model.ipynb](./notebooks/07_probability_transition_model.ipynb) — compare evidence hypotheses and resolve ambiguous intervals conservatively.
 10. [08_run_pipeline.ipynb](./notebooks/08_run_pipeline.ipynb) — rebuild the final submission from raw data.
 11. [08b_model_evaluation.ipynb](./notebooks/08b_model_evaluation.ipynb) — show a small set of public disagreement diagrams and turn them into case ideas; this is evaluation-only.
-12. [09_experimental_results.ipynb](./notebooks/09_experimental_results.ipynb) — optional comparison of alternative policies; this is audit material, not the production runner.
-
-Optional collaborator studies are kept in [notebooks/appendix/](./notebooks/appendix/), including the raw alternate-camera ball-observation walkthrough and the independent distance/speed observation baseline.
+Optional experiment and collaborator studies are kept in [notebooks/appendix/](./notebooks/appendix/), including the alternative-policy comparison, raw alternate-camera ball-observation walkthrough, and independent distance/speed observation baseline. They are not required for the production run.
 
 ## Run the final pipeline
 
