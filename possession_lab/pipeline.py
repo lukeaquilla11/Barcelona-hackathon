@@ -4,13 +4,14 @@ The lower-level modules remain independently testable. This facade gives
 notebooks, organiser scripts, and future models one consistent boundary:
 
     load data -> source-aware ball observations -> feature engineering ->
-    base scenarios -> restart/dead-ball evidence -> anchors ->
+    preliminary observation scenarios -> anchors -> final scenario context ->
     transition hypotheses -> interval resolver -> optional sequence smoother ->
     H/A/D/X labels
 
-The feature builder keeps a base scenario pass separate from its
-anchor-informed refinement. This is intentional: scenarios describe observed
-football context, while anchors and resolvers decide ownership.
+The feature builder keeps a preliminary observation scenario separate from the
+final scenario context. This is intentional: the first is an audit of raw
+context before anchor selection; the final context is consumed by transitions.
+Neither scenario column is an H/A/D label.
 
 No function in this module reads public ground truth during construction.
 Ground truth belongs only to the evaluator and error-audit notebooks.
@@ -70,10 +71,10 @@ def build_observations(
     exposes George's source/uncertainty observations to downstream scenarios
     and transition hypotheses.  ``include_haiqal_observations=True`` attaches
     Haiqal's raw closeness/speed/dead-ball clues to the same observation table;
-    they remain bounded evidence and never become labels. The feature layer
-    performs a base scenario pass before anchors and an anchor-refined pass
-    afterward. It is the safe integration mode for the reference model;
-    coordinate filling remains an explicit ablation.
+    they remain comparison evidence and never become labels. The feature layer
+    records a preliminary observation scenario before anchors and one final
+    scenario context after anchor selection. It is the safe integration mode
+    for the reference model; coordinate filling remains an explicit ablation.
     """
     resolved_model = model or ClosestTeamRuleModel(game=game, data_dir=data_dir)
     observations = build_engineered_features(

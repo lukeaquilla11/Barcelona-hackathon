@@ -87,18 +87,12 @@ probability_evidence = predict_supervised_evidence(
 
 Treat this as an independent signal for comparison before considering any integration into the main resolver. The model uses past/future frame windows and Viterbi decoding, so it is not a zero-latency live predictor.
 
-The canonical runner can now perform that comparison without importing the decoded labels:
-
-```bash
-python -m possession_lab.run_interpolated_flight_experiment \
-  --kinson-model possession_lab/models/supervised_possession.joblib
-```
-
-This writes standalone Kinson-Viterbi and bounded probability-evidence candidates. The latter
-passes through our anchors, transition hypotheses, and `NO_SWITCH`/`CONTESTED` interval resolver.
-The standalone path is diagnostic only; the adapter records `supervised_evidence_decoded_used=False`
-to make accidental label copying auditable. Add `--george-ballfill /path/to/BAR-ATH_ball.csv` to
-test George observations before the same Kinson evidence layer.
+The canonical organiser-facing runner does not accept this model. That is
+intentional: the fitted classifier and decoder depend on event-derived labels,
+so they are retained as a separately documented supervised comparison rather
+than hidden inputs to the label-free resolver. Use `supervised_bridge.py` only
+for an explicit offline comparison or audit, and report its training matches
+and label provenance alongside any score.
 
 ---
 

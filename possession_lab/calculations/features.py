@@ -99,21 +99,22 @@ def build_engineered_features(
     temporal = add_reception_episode_features(temporal)
     temporal = add_ball_kick_episode_features(temporal, rules)
     temporal = add_missing_ball_cause_features(temporal)
-    # Scenario detection is intentionally two-pass. This first pass uses
-    # source-aware ball/player observations, motion, visibility, restart
-    # context, and missing-ball causes, but no anchor-derived ownership.
-    # Reception and anchor features can refine the scenario later without
-    # allowing a scenario name to become a possession label.
+    # Scenario detection has an explicit observation pass before the anchor
+    # hierarchy. This records what the raw motion/visibility/restart evidence
+    # says before any selected team anchor exists; it is an audit lane, not a
+    # possession label.
     temporal["scenario_context_observation"] = classify_scenarios(
         temporal,
         causal=True,
     )
     temporal = add_anchor_forecast_features(temporal, rules)
     temporal["graded"] = graded_mask(len(temporal), game=model.game)
+    # Select anchors before publishing the final scenario context. The final
+    # scenario is still only football context (flight, reception, contest,
+    # restart, etc.); it never becomes H/A/D by itself.
+    temporal = apply_anchor_hierarchy(temporal, rules)
     temporal["scenario_context"] = classify_scenarios(temporal)
     temporal["scenario_context_causal"] = classify_scenarios(temporal, causal=True)
-    temporal["scenario_context_anchor_refined"] = temporal["scenario_context"]
-    temporal = apply_anchor_hierarchy(temporal, rules)
     temporal = add_contact_arrival_coherence_features(temporal)
     temporal = add_transition_trust_features(
         temporal,

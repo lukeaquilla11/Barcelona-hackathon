@@ -22,10 +22,10 @@ H/A/D labels is the bottleneck. No fixed D hold duration is used.
 
 The current organiser-facing winner is `diagnostic_visible_ball_no_switch_interval`
 (Macro-F1 `0.8917`, Spell-F1 `0.6207`, Transition F1@25 `0.4571` on the public
-five-minute slice). Its resolver is the balanced-current profile. George,
-Haiqal, and Kinson remain optional observation adapters: they may add coverage
-or auxiliary evidence on the private full match, but their final labels never
-override our anchors or interval hypotheses. With the available
+five-minute slice). Its resolver is the balanced-current profile. George remains
+an upstream observation adapter; Haiqal is a comparison baseline, and Kinson's
+fitted supervised model is appendix-only. Their final labels never override our
+anchors or interval hypotheses. With the available
 `data/ball/BAR-ATH_ball.csv`, George's observed/fused fill ablation scored
 `0.8723 / 0.6000 / 0.3889`, below the winner, so it is not enabled by default.
 
@@ -89,15 +89,10 @@ The notebook does not duplicate the detailed theory. Reusable functions live in:
   observation. It is exposed in the scenario-confidence and transition-ledger audits, but it did
   not change any full-length labels or public metrics in the current run, so it is not promoted as
   a hard handoff rule;
-- `--kinson-model /path/to/model.joblib` — optional Kinson-compatible supervised evidence
-  adapter. It attaches frame-aligned H/A/D probabilities after our observation and feature layers,
-  then tests capped transition support (`0`, `0.02`, `0.04`, `0.08`) through our interval resolver.
-  The Kinson Viterbi path is also emitted as a standalone diagnostic, never copied into the
-  promoted labels. On the available public slice, the sample-only standalone path scored Macro-F1
-  `0.6425`, Spell-F1 `0.3590`, and Transition F1@25 `0.2667`; every bounded integration was an
-  exact label/score tie with the current best (`0.8917 / 0.6207 / 0.4571`) without George's fill
-  being enabled. This is evidence that the resolver protects the pipeline from a weak auxiliary model, not
-  evidence that the sample-only classifier is ready for the private match.
+- Kinson's supervised classifier and decoder are not runner arguments. They remain in
+  [SUPERVISED_TRAINING.md](./SUPERVISED_TRAINING.md) and the appendix as a separately ranked
+  experiment because their fitted weights depend on event-derived labels; they are not part of the
+  promoted label-free pipeline.
 - [../config/possession_rules.yaml](../config/possession_rules.yaml) — configuration-backed thresholds and windows.
 
 The root modules remain as compatibility implementations for existing scripts.

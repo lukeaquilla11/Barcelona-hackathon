@@ -7,7 +7,7 @@ Read the notebooks in this order. The sequence follows **Problem → Idea → Co
 2. [02_feature_engineering.ipynb](./02_feature_engineering.ipynb) — modular geometry, speed, acceleration, distance-per-kick, and missing-ball signals.
 3. [03_scenario_engineering.ipynb](./03_scenario_engineering.ipynb) — dead ball, control, flight, reception, long-ball and contested scenarios.
 4. [04_deadball_setpieces.ipynb](./04_deadball_setpieces.ipynb) — focused restart boundary study for goal kicks, free kicks, corners, throw-ins, and kickoffs.
-5. [04b_ball_missing_player_analysis.ipynb](./04b_ball_missing_player_analysis.ipynb) — missing-ball and missing-player observations, confidence signals, case diagrams, and the optional George fused-ball observation layer.
+5. [04b_ball_missing_player_analysis.ipynb](./04b_ball_missing_player_analysis.ipynb) — the dedicated George missing-ball observation walkthrough: alternate-camera sources, uncertainty, derived motion, case diagrams, and safe downstream use.
 6. [05_anchors_rulebook.ipynb](./05_anchors_rulebook.ipynb) — observable evidence for easy H/A/D anchors.
 7. [06_transition_markers.ipynb](./06_transition_markers.ipynb) — dead-ball/restart handling, transition windows, and unresolved contest evidence.
 8. [07_probability_transition_model.ipynb](./07_probability_transition_model.ipynb) — normalized observation evidence, explicit no-switch/contested transition hypotheses, interval resolution, and optional Viterbi/HSMM roles.

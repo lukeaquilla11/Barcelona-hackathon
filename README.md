@@ -56,32 +56,30 @@ Smart-Tagging evidence handling. It is a comparison baseline, not a replacement
 for the richer physics-veto policy.
 
 Haiqal's branch contributed reusable windowed evidence and a raw
-distance/speed/dead-ball Viterbi baseline. George's branch contributed a
-source-aware ball-observation/fill layer. George can now run in evidence-only
-mode: source, uncertainty, flight, and dead-ball observations are passed into
-the missing-ball/scenario layers without overwriting tactical coordinates. The
-coordinate-fill path remains a separately audited ablation. A selective fill
-gate can additionally require a predeclared George observation-confidence
-minimum before coordinates are allowed downstream; observations below that
-gate still remain available as uncertainty evidence. This repository
-consumes George's precomputed CSV; the alternate-video/alignment producer stays
-in George's branch. Kinson's branch contributed a
-homography-weighted HMM/Viterbi baseline and externally trained parameter ideas.
-The safe integration boundary is observation-level: George can improve the ball
-input before feature construction, while Haiqal/Kinson outputs can only be
-bounded auxiliary evidence. Their final labels are never copied into the active
-resolver. Haiqal/Kinson bounded evidence tied the current best on the public
-slice. The actual local `data/ball/BAR-ATH_ball.csv` coordinate-fill ablation
-changed upstream observations but reduced the public result. Evidence-only and
-selective `0.75` confidence filling both tied the winner, so George remains an
-optional, separately evaluated observation layer rather than an unsupported
-possession-label override.
+distance/speed/dead-ball Viterbi baseline, which remain comparison material.
+George's branch contributed the source-aware ball-observation layer. The
+organiser-facing missing-ball walkthrough is
+[04b_ball_missing_player_analysis.ipynb](./notebooks/04b_ball_missing_player_analysis.ipynb):
+it explains George's alternate-camera sources, uncertainty, derived speed and
+displacement, and why those observations must be checked before they influence
+scenarios or transitions. This repository consumes George's precomputed CSV;
+the alternate-video/alignment producer stays in George's branch.
 
-The canonical feature builder uses a two-pass scenario detector. A base scenario
-pass consumes ball/player motion, visibility, restart context, and missing-ball
-causes before anchors. Reception and anchor evidence then refine the scenario
-context. This avoids a circular rule in which an ownership decision creates the
-scenario that supposedly justified that same decision.
+Kinson's fitted classifier and Viterbi decoder are not part of the promoted
+pipeline. They were trained/tuned against event-derived labels, so they remain
+a separately documented supervised comparison rather than hidden evidence in a
+label-free method. No collaborator's final labels are copied into the active
+resolver. The local George coordinate-fill ablation changed upstream motion
+enough to reduce the public result, so George is retained as an auditable
+observation source and explicit ablation, not an automatic possession-label
+override.
+
+The canonical feature builder keeps one preliminary scenario lane,
+`scenario_context_observation`, before anchor selection and one final
+`scenario_context` lane after it. The first is an audit of what motion,
+visibility, restart, and missing-ball evidence says before ownership anchors;
+the second is the scenario context consumed downstream. Neither is a possession
+label, so we do not maintain a redundant third “anchor-refined scenario” field.
 
 `evidence_bounded_deadball` is an additional diagnostic policy: Smart Tagging
 provides restart context, while D is released only where a post-restart H/A
