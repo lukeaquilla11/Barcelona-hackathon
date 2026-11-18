@@ -7,7 +7,7 @@ Two steps, no model, no training:
      that player's team the ball. Where the ball is not visible, say D.
   2. Smooth the result with a centred majority vote, because step 1 alone flickers.
 
-    pip install -r requirements.txt          # numpy and pandas, nothing else
+    python -m pip install -r requirements.txt          # numpy and pandas, nothing else
     python starter/baseline.py               # writes four submissions and scores them
 
 numpy only, on purpose: it runs in the same environment as the scorer, so getting to a scored

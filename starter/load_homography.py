@@ -5,7 +5,7 @@ the pixel that shows it, and back. That makes it the tool for looking at your ow
 a spurious transition out of reports/<name>_transitions.csv, project the players onto that frame
 of the video, and see what fooled the model.
 
-    pip install -r requirements.txt          # numpy and pandas, nothing else
+    python -m pip install -r requirements.txt          # numpy and pandas, nothing else
     python starter/load_homography.py        # summary, both sources
 
     data/tactical/BAR-ATH_tactical_homography.csv

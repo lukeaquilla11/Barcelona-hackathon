@@ -73,12 +73,18 @@ copied into the promoted resolver.
 ## Dependencies
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -r requirements.txt
 ```
 
 The optional raw video-observation appendix has additional dependencies listed
-in [ballfill/requirements.txt](./ballfill/requirements.txt). They are not
-needed for the canonical submission run.
+in [ballfill/requirements.txt](./ballfill/requirements.txt). Install both files
+when you want to run that appendix:
+
+```bash
+python -m pip install -r requirements.txt -r ballfill/requirements.txt
+```
+
+Those extra video dependencies are not needed for the canonical submission run.
 
 ## Optional external-data experiment
 

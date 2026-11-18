@@ -6,7 +6,7 @@ fills what is still missing from the players, physics and the edges of each gap.
 is checked against held-out truth.
 
 ```bash
-pip install -r requirements.txt -r ballfill/requirements.txt
+python -m pip install -r requirements.txt -r ballfill/requirements.txt
 export MTAH_DATA_DIR=/path/to/data      # the match bundle, incl. BAR-ATH_tactical.mp4
 python -m ballfill.run        # -> cache/BAR-ATH_ball.csv: frame, x, y, source, sigma_m, gap_s,
                               #    p_video, p_carrier, p_dead

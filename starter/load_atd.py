@@ -16,7 +16,7 @@ separate 164488-frame dataset on its own timeline:
 kloppy reads that pair directly, so this module is thin on purpose. What it adds is the part that
 is easy to get wrong and expensive to notice: the join between tracking frames and video frames.
 
-    pip install -r requirements-starter.txt
+    python -m pip install -r requirements.txt
     python starter/load_atd.py                  # prints a summary and a few aligned frames
 
 What you actually need to know
@@ -64,7 +64,7 @@ def load(game=GAME, data_dir=None, source=DEFAULT_SOURCE):
     except ImportError:
         raise ImportError(
             "kloppy is not installed. It is optional -- the evaluation needs only numpy and "
-            "pandas -- but this loader needs it:\n    pip install -r requirements-starter.txt")
+            "pandas -- but this loader needs it:\n    python -m pip install -r requirements.txt")
 
     meta, raw = atd_paths(game, data_dir, source)
     return metrica.load_tracking_epts(meta_data=meta, raw_data=raw)

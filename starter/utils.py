@@ -4,7 +4,7 @@ Nothing here is needed to produce a submission -- baseline.py writes one with nu
 for looking at the data, which is the fastest way to understand what the tracking is and is not
 telling you.
 
-    pip install -r requirements-starter.txt
+    python -m pip install -r requirements.txt
 
 matplotlib is imported inside the functions rather than at module scope, so importing this module
 costs nothing in an environment that only wants the loaders.
