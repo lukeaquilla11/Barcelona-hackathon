@@ -1,0 +1,15 @@
+{
+	"folders": [
+		{
+			"path": "../../barca-hack"
+		},
+		{
+			"path": ".."
+		}
+	],
+	"settings": {
+		"notebook.markup.fontSize": 16,
+		"python-envs.defaultEnvManager": "ms-python.python:conda",
+		"python-envs.defaultPackageManager": "ms-python.python:conda"
+	}
+}

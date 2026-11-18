@@ -682,9 +682,15 @@ def plot_timeline_window(
         _, ax = plt.subplots(figsize=(13, 3.5))
     ax.set_title("Evidence timeline — observations, not hand-written labels")
     _configure_match_clock_axis(ax, window)
-    ax.set_yticks([0, 1, 2, 2.62, 2.95])
-    ax.set_yticklabels(["Away", "Dead / unavailable", "Home", "Ground truth", "Prediction"])
-    ax.set_ylim(-0.5, 3.35)
+    has_prediction = predicted_labels is not None
+    y_ticks = [0, 1, 2, 2.62]
+    y_labels = ["Away", "Dead / unavailable", "Home", "Ground truth"]
+    if has_prediction:
+        y_ticks.append(2.95)
+        y_labels.append("Prediction")
+    ax.set_yticks(y_ticks)
+    ax.set_yticklabels(y_labels)
+    ax.set_ylim(-0.5, 3.35 if has_prediction else 2.95)
     ax.grid(axis="x", alpha=0.2)
     x = window["frame"].to_numpy()
     for column, color, marker, label in (
