@@ -54,7 +54,7 @@ The decoder cannot smooth away protected `D` or `X` evidence.
 
 The order is configuration-backed in [`../config/possession_rules.yaml`](../config/possession_rules.yaml):
 
-1. `restart_control_anchor_team` — a restart is active and tracking agrees with the tagged team;
+1. `restart_control_anchor_team` — for kickoff, physical activation plus the tagged restart team is sufficient for an immediate first-live-frame anchor; for other restarts, tracking must agree with the tagged team;
 2. `pressure_anchor_team` — close control remains strong even under pressure;
 3. `anchor_team` — ordinary stable low-pressure control;
 4. no anchor — leave the frame for scenario/trajectory resolution.

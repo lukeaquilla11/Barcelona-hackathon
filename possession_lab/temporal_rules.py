@@ -2136,11 +2136,22 @@ def add_boundary_anchor_features(
         & (p90_activity <= float(_value(rules, "dead_ball_evidence", "low_activity_p90_mps")))
         & (speed <= 1.0)
     ).to_numpy(bool)
-    non_kickoff = ~np.isin(restart_type, ["Kick Off (Start)", "Kick Off (After Goal)"])
+    kickoff = np.isin(restart_type, ["Kick Off (Start)", "Kick Off (After Goal)"])
+    non_kickoff = ~kickoff
     dead_ball_boundary = set_piece & non_kickoff & low_motion
     restart_live_boundary = restart_context & restart_active
+    # A kickoff is a special restart: once the ball is physically active, the
+    # tagged restart team owns the first live frame immediately.  This is not
+    # the same as treating the pre-kickoff interval as live; the activation
+    # gate still requires the ball-speed evidence above.
+    kickoff_control = (
+        restart_live_boundary
+        & kickoff
+        & np.isin(restart_hint, ["H", "A"])
+    )
     hinted_control = (
         restart_live_boundary
+        & ~kickoff
         & np.isin(anchor, ["H", "A"])
         & np.isin(restart_hint, ["H", "A"])
         & (anchor == restart_hint)
@@ -2149,12 +2160,17 @@ def add_boundary_anchor_features(
     out["ball_out_of_play_anchor"] = out_of_bounds
     out["low_motion_dead_ball_anchor"] = dead_ball_boundary
     out["restart_live_boundary_anchor"] = restart_live_boundary
+    out["kickoff_control_anchor"] = kickoff_control
     out["restart_hinted_control_anchor"] = hinted_control
     out["restart_fallback_control_anchor"] = fallback_control
-    out["restart_control_anchor_team"] = np.where(hinted_control | fallback_control, anchor, None)
+    out["restart_control_anchor_team"] = np.where(
+        kickoff_control,
+        restart_hint,
+        np.where(hinted_control | fallback_control, anchor, None),
+    )
     out["boundary_anchor_source"] = np.select(
-        [hinted_control, fallback_control, dead_ball_boundary, out_of_bounds],
-        ["RESTART_HINTED_CONTROL", "RESTART_TRACKING_CONTROL", "DEAD_BALL_LOW_MOTION", "BALL_OUT_OF_PLAY"],
+        [kickoff_control, hinted_control, fallback_control, dead_ball_boundary, out_of_bounds],
+        ["KICKOFF_TEAM_ANCHOR", "RESTART_HINTED_CONTROL", "RESTART_TRACKING_CONTROL", "DEAD_BALL_LOW_MOTION", "BALL_OUT_OF_PLAY"],
         default="NONE",
     )
     return out

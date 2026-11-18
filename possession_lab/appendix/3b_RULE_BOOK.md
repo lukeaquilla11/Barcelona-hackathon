@@ -22,7 +22,7 @@ scenario evidence without a team ───────────────�
 |---|---|---|---|
 | 0 | Grading mask | frame is outside either graded interval | force `X` |
 | 1 | Dead ball | Smart Tagging context plus low ball/team activity and boundary evidence | protect `D`; do not let a decoder erase it |
-| 2 | Restart control | restart team hint agrees with a sustained controlled receiver | create `H`/`A` anchor after control, not merely at the restart whistle |
+| 2 | Restart control | kickoff has physical activation plus a tagged restart team; other restarts need the hint to agree with a sustained controlled receiver | kickoff: create the tagged team's `H`/`A` anchor on the first live frame; other restarts: create it after control, not merely at the restart whistle |
 | 3 | Stable control | ball distance, team margin, persistence, low pressure, stable speed | create a high-confidence team anchor |
 | 4 | Genuine reception | local distance minimum, approach, deceleration, receiver/team agreement, post-arrival control | allow a bounded team switch |
 | 5 | Scenario only | flight, contest, occlusion, pressure or pass evidence with no team agreement | explain uncertainty; never force a switch alone |
@@ -51,7 +51,7 @@ inspectable and can be changed without rewriting the feature calculations.
   - out-of-play coordinates
   - missing-coordinate episodes
 - Restart interpretation
-  - kickoff: first sustained movement + restart team context
+  - kickoff: the pre-kickoff interval remains `D`; once physical activation is observed, assign the first live frame immediately to the tagged restart team
   - set piece: last near-zero frame + post-restart movement
   - taker proxy: nearest player to the ball at `v≈0`
 - Possession geometry second

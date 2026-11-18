@@ -156,6 +156,10 @@ def select_ball_gap_event_window(
             "end_frame": gap_end + minimum_context_frames,
             "pre_control_frame": gap_start - 1,
             "post_control_frame": gap_end + 1,
+            "last_seen_frame": gap_start - 1,
+            "next_seen_frame": gap_end + 1,
+            "gap_start_frame": gap_start,
+            "gap_end_frame": gap_end,
         }
     pre_mask = before.get("selected_anchor_team", pd.Series(None, index=before.index)).isin(["H", "A"])
     post_mask = after.get("selected_anchor_team", pd.Series(None, index=after.index)).isin(["H", "A"])
@@ -167,11 +171,17 @@ def select_ball_gap_event_window(
         post_control = after.loc[after.get("closest_distance_m", pd.Series(np.inf, index=after.index)).le(control_radius_m)]
     pre_frame = int(pre_control.iloc[-1].frame) if not pre_control.empty else int(before.iloc[-1].frame)
     post_frame = int(post_control.iloc[0].frame) if not post_control.empty else int(after.iloc[0].frame)
+    last_seen_frame = int(before.iloc[-1].frame)
+    next_seen_frame = int(after.iloc[0].frame)
     return {
         "start_frame": max(int(table.frame.min()), pre_frame - minimum_context_frames // 2),
         "end_frame": min(int(table.frame.max()), post_frame + minimum_context_frames // 2),
         "pre_control_frame": pre_frame,
         "post_control_frame": post_frame,
+        "last_seen_frame": last_seen_frame,
+        "next_seen_frame": next_seen_frame,
+        "gap_start_frame": int(gap_start),
+        "gap_end_frame": int(gap_end),
     }
 
 
@@ -246,6 +256,7 @@ def plot_trajectory_window(
     include_slots: Sequence[int] | None = None,
     zoom_to_involved: bool = False,
     show_all_reference_players: bool = True,
+    show_player_paths: bool = True,
     show_nearest_geometry: bool = False,
     touch_radius_m: float = 1.5,
     ax=None,
@@ -306,7 +317,7 @@ def plot_trajectory_window(
         if before >= 0 and after < len(window) and observed.iloc[before] and observed.iloc[after]:
             ax.plot([bx.iloc[before], bx.iloc[after]], [by.iloc[before], by.iloc[after]],
                     color="#d95f02", linestyle=(0, (2, 2)), linewidth=2.2,
-                    label="missing-ball bridge" if left == starts[0] else None)
+                    label="missing-ball displacement bridge" if left == starts[0] else None)
 
     # Direction arrows make the path readable without requiring tracks.
     visible = np.flatnonzero(observed.to_numpy())
@@ -337,6 +348,30 @@ def plot_trajectory_window(
     for slot in include_slots or ():
         if slot in slots and slot not in nearby_slots:
             nearby_slots.append(slot)
+
+    # A density field is easier to read than a bundle of overlapping tracks,
+    # especially around a missing-ball interval.  Individual paths remain
+    # available through ``show_player_paths=True`` for detailed audits.
+    player_x, player_y = [], []
+    for slot in nearby_slots:
+        px = _metres(pd.to_numeric(window[f"{slot}_x"], errors="coerce"), PITCH_LENGTH_M)
+        py = _metres(pd.to_numeric(window[f"{slot}_y"], errors="coerce"), PITCH_WIDTH_M)
+        valid = px.notna() & py.notna()
+        player_x.extend(px.loc[valid].tolist())
+        player_y.extend(py.loc[valid].tolist())
+    if len(player_x) >= 8:
+        ax.hist2d(
+            player_x,
+            player_y,
+            bins=(20, 14),
+            range=((0.0, PITCH_LENGTH_M), (0.0, PITCH_WIDTH_M)),
+            cmap="YlOrRd",
+            alpha=0.18,
+            cmin=1,
+            zorder=0,
+        )
+        ax.plot([], [], color="#e6ab02", linewidth=6, alpha=0.35,
+                label="nearby-player occupancy density")
     for slot in slots:
         if not show_all_reference_players and nearby_slots and slot not in nearby_slots:
             continue
@@ -384,14 +419,15 @@ def plot_trajectory_window(
         color = "#d62728" if team == "H" else "#1f77b4"
         valid = x.notna() & y.notna()
         valid_idx = np.flatnonzero(valid.to_numpy())
-        for pos, (left, right) in enumerate(zip(valid_idx[:-1], valid_idx[1:])):
-            if right != left + 1:
-                continue
-            recency = (right - valid_idx[0]) / max(1, valid_idx[-1] - valid_idx[0])
-            ax.plot([x.iloc[left], x.iloc[right]], [y.iloc[left], y.iloc[right]],
-                color=color, linewidth=1.8 + 1.2 * recency,
-                    alpha=0.35 + 0.60 * recency, zorder=7,
-                    label=f"{team} player coordinate paths" if slot == nearby_slots[0] and pos == 0 else None)
+        if show_player_paths:
+            for pos, (left, right) in enumerate(zip(valid_idx[:-1], valid_idx[1:])):
+                if right != left + 1:
+                    continue
+                recency = (right - valid_idx[0]) / max(1, valid_idx[-1] - valid_idx[0])
+                ax.plot([x.iloc[left], x.iloc[right]], [y.iloc[left], y.iloc[right]],
+                    color=color, linewidth=1.8 + 1.2 * recency,
+                        alpha=0.35 + 0.60 * recency, zorder=7,
+                        label=f"{team} player coordinate paths" if slot == nearby_slots[0] and pos == 0 else None)
         valid_points = np.flatnonzero(valid.to_numpy())
         if len(valid_points) >= 2:
             ax.scatter([x.iloc[valid_points[0]], x.iloc[valid_points[-1]]],
@@ -521,6 +557,10 @@ def select_ball_gap_event_window(
         "end_frame": min(int(table["frame"].max()), int(end)),
         "pre_control_frame": pre_anchor,
         "post_control_frame": post_anchor,
+        "last_seen_frame": int(before.iloc[-1]["frame"]),
+        "next_seen_frame": int(after.iloc[0]["frame"]),
+        "gap_start_frame": int(gap_start),
+        "gap_end_frame": int(gap_end),
     }
 
 
@@ -534,6 +574,8 @@ def plot_evidence_window(
     nearby_radius_m: float = 12.0,
     nearby_count: int = 6,
     show_all_reference_players: bool = False,
+    focus_gap: bool = False,
+    show_player_paths: bool = False,
 ):
     """Show significant frame geometry above a timeline of context and evidence.
 
@@ -546,18 +588,33 @@ def plot_evidence_window(
     window = features.loc[features["frame"].between(start_frame, end_frame)].copy()
     if window.empty:
         raise ValueError("evidence window contains no frames")
+    plot_start, plot_end = int(start_frame), int(end_frame)
+    if focus_gap and {"ball_x", "ball_y"}.issubset(window.columns):
+        observed = window["ball_x"].notna() & window["ball_y"].notna()
+        missing = ~observed.to_numpy(bool)
+        starts = np.flatnonzero(missing & ~np.r_[False, missing[:-1]])
+        ends = np.flatnonzero(missing & ~np.r_[missing[1:], False])
+        internal = [(left, right) for left, right in zip(starts, ends)
+                    if left > 0 and right + 1 < len(window)
+                    and observed.iloc[left - 1] and observed.iloc[right + 1]]
+        if internal:
+            left, right = max(internal, key=lambda pair: pair[1] - pair[0])
+            plot_start = int(window.iloc[left - 1]["frame"])
+            plot_end = int(window.iloc[right + 1]["frame"])
+            window = window.loc[window["frame"].between(plot_start, plot_end)].copy()
     fig, (pitch_ax, timeline_ax) = plt.subplots(
         2, 1, figsize=(13, 9), gridspec_kw={"height_ratios": [3, 1]}, constrained_layout=True
     )
     plot_trajectory_window(
         features,
-        start_frame,
-        end_frame,
+        plot_start,
+        plot_end,
         team_by_slot=team_by_slot,
         reference_frame=int(window.iloc[len(window) // 2]["frame"]),
         nearby_radius_m=nearby_radius_m,
         nearby_count=nearby_count,
         show_all_reference_players=show_all_reference_players,
+        show_player_paths=show_player_paths,
         ax=pitch_ax,
     )
     timeline_ax.set_title("Evidence timeline — observations, not hand-written labels")
@@ -565,7 +622,7 @@ def plot_evidence_window(
     # Keep categorical markers on the same rows. Scenario and transition
     # markers are deliberately offset so they do not masquerade as labels.
     timeline_ax.set_yticks([0, 1, 2, 2.7])
-    timeline_ax.set_yticklabels(["Away", "Dead / unavailable", "Home", "Ground truth"])
+    timeline_ax.set_yticklabels(["Away", "Scenario evidence", "Home", "Ground truth"])
     timeline_ax.set_ylim(-0.5, 3.1)
     timeline_ax.grid(axis="x", alpha=0.2)
     x = window["frame"].to_numpy()
@@ -684,7 +741,7 @@ def plot_timeline_window(
     _configure_match_clock_axis(ax, window)
     has_prediction = predicted_labels is not None
     y_ticks = [0, 1, 2, 2.62]
-    y_labels = ["Away", "Dead / unavailable", "Home", "Ground truth"]
+    y_labels = ["Away", "Scenario evidence", "Home", "Ground truth"]
     if has_prediction:
         y_ticks.append(2.95)
         y_labels.append("Prediction")
@@ -778,7 +835,8 @@ def plot_transition_signals_window(
     """Plot transition evidence without converting it into labels.
 
     The panels show signed team distance margin, nearest-player distance and
-    closing effort, then ball speed/acceleration and kick-episode distance.
+    closing effort, ball speed/acceleration, then ball distance and candidate
+    kick impulse.
     Unavailable grading regions and missing-ball frames are shaded so a gap is
     not mistaken for a zero-valued observation.
     """
@@ -788,7 +846,7 @@ def plot_transition_signals_window(
     if window.empty:
         raise ValueError("signal window contains no frames")
     if axes is None:
-        _, axes = plt.subplots(3, 1, figsize=(13, 9), sharex=True, constrained_layout=True)
+        _, axes = plt.subplots(4, 1, figsize=(13, 11), sharex=True, constrained_layout=True)
     axes = np.asarray(axes).ravel()
     x = window["frame"].to_numpy()
     for ax in axes:
@@ -845,8 +903,18 @@ def plot_transition_signals_window(
                 axes[2].axvspan(x[mask][0], x[mask][-1], color="#2ca02c", alpha=0.08, lw=0)
                 distance = series("kick_episode_distance_m")
                 axes[2].text(x[mask][0], axes[2].get_ylim()[1], f"kick {distance[mask][-1]:.1f}m", fontsize=7, va="top")
-    axes[2].set_ylabel("m/s, m/s²")
-    axes[2].set_xlabel("tactical frame")
+    axes[2].set_ylabel("speed / acceleration")
+
+    axes[3].plot(x, series("ball_distance_travelled_recent_m"), color="#111111",
+                 label="recent ball distance")
+    axes[3].plot(x, series("kick_episode_distance_m"), color="#8c564b",
+                 alpha=0.8, label="distance in kick episode")
+    axes[3].set_ylabel("distance (m)")
+    impulse = axes[3].twinx()
+    impulse.plot(x, series("kick_episode_contact_change"), color="#e7298a",
+                 marker=".", markersize=3, alpha=0.8, label="candidate kick impulse")
+    impulse.set_ylabel("impulse (0–1)")
+    axes[3].set_xlabel("tactical frame")
 
     for ax in axes:
         shade_unavailable(ax)
@@ -856,6 +924,10 @@ def plot_transition_signals_window(
             effort_handles, effort_labels = effort.get_legend_handles_labels()
             handles += effort_handles
             labels += effort_labels
+        if ax is axes[3]:
+            impulse_handles, impulse_labels = impulse.get_legend_handles_labels()
+            handles += impulse_handles
+            labels += impulse_labels
         ax.legend(handles, labels, loc="upper left", fontsize=8, ncol=3)
     if ground_truth is not None:
         axes[0].text(0.99, 0.92, "ground truth is evaluation-only and not used by these signals",

@@ -2882,7 +2882,12 @@ def add_transition_boundary_hypotheses(features: pd.DataFrame) -> pd.DataFrame:
     ).fillna("UNKNOWN").to_numpy(object)
     restart_context = boolean("restart_context") | boolean("smart_set_piece")
     restart_active = boolean("restart_ball_active") | boolean("restart_live_boundary_anchor")
-    restart_control = boolean("restart_confirmed_anchor") | boolean("restart_hinted_control_anchor") | boolean("restart_fallback_control_anchor")
+    restart_control = (
+        boolean("restart_confirmed_anchor")
+        | boolean("kickoff_control_anchor")
+        | boolean("restart_hinted_control_anchor")
+        | boolean("restart_fallback_control_anchor")
+    )
     out_of_play = boolean("ball_out_of_play_anchor")
     low_motion_dead = boolean("low_motion_dead_ball_anchor")
     dead_context = (scenario == "DEAD") | out_of_play | low_motion_dead
@@ -2907,9 +2912,16 @@ def add_transition_boundary_hypotheses(features: pd.DataFrame) -> pd.DataFrame:
     # is a team-level control/restart anchor.  Player repositioning alone is
     # intentionally not enough.
     restart_activation = restart_context & restart_active
-    d_to_live = restart_activation & (previous_dead | restart_control) & valid_anchor
+    restart_team = out.get(
+        "restart_control_anchor_team",
+        pd.Series(None, index=out.index, dtype=object),
+    ).to_numpy(object)
+    live_team = np.where(
+        np.isin(restart_team, ["H", "A"]), restart_team, anchor
+    )
+    d_to_live = restart_activation & (previous_dead | restart_control) & np.isin(live_team, ["H", "A"])
     boundary_kind[d_to_live] = np.where(
-        anchor[d_to_live] == "H", "D_TO_H", "D_TO_A"
+        live_team[d_to_live] == "H", "D_TO_H", "D_TO_A"
     )
     boundary_reason[d_to_live] = np.where(
         restart_control[d_to_live], "RESTART_CONTROL", "RESTART_BALL_ACTIVE"
@@ -3088,6 +3100,7 @@ def add_transition_role_evidence(features: pd.DataFrame) -> pd.DataFrame:
     restart_physical = boolean("restart_ball_active") | boolean("restart_live_boundary_anchor")
     restart_control = (
         boolean("restart_confirmed_anchor")
+        | boolean("kickoff_control_anchor")
         | boolean("restart_hinted_control_anchor")
         | boolean("restart_fallback_control_anchor")
     )
@@ -5999,19 +6012,28 @@ def add_restart_phase_features(
     hinted = out.get(
         "restart_hinted_control_anchor", pd.Series(False, index=out.index)
     ).fillna(False).to_numpy(bool)
+    kickoff = out.get(
+        "kickoff_control_anchor", pd.Series(False, index=out.index)
+    ).fillna(False).to_numpy(bool)
     fallback = out.get(
         "restart_fallback_control_anchor", pd.Series(False, index=out.index)
     ).fillna(False).to_numpy(bool)
     anchor_team = out.get(
         "anchor_team", pd.Series(None, index=out.index, dtype=object)
     ).to_numpy(object)
+    restart_team = out.get(
+        "restart_control_anchor_team", pd.Series(None, index=out.index, dtype=object)
+    ).to_numpy(object)
     confidence = pd.to_numeric(
         out.get("anchor_confidence_score", pd.Series(0.0, index=out.index)),
         errors="coerce",
     ).fillna(0.0).to_numpy(float)
-    eligible_control = hinted | (fallback if use_tracking_fallback else False)
-    eligible_control &= np.isin(anchor_team, ["H", "A"])
-    eligible_control &= confidence >= float(minimum_anchor_confidence)
+    control_team_values = np.where(
+        np.isin(restart_team, ["H", "A"]), restart_team, anchor_team
+    )
+    eligible_control = kickoff | hinted | (fallback if use_tracking_fallback else False)
+    eligible_control &= np.isin(control_team_values, ["H", "A"])
+    eligible_control &= kickoff | (confidence >= float(minimum_anchor_confidence))
 
     phase = np.full(n, "OUTSIDE_RESTART", dtype=object)
     phase[context & ~active] = "PRE_RESTART"
@@ -6041,12 +6063,12 @@ def add_restart_phase_features(
             if not eligible_control[cursor]:
                 cursor += 1
                 continue
-            team = anchor_team[cursor]
+            team = control_team_values[cursor]
             run_end = cursor + 1
             while (
                 run_end < search_end
                 and eligible_control[run_end]
-                and anchor_team[run_end] == team
+                and control_team_values[run_end] == team
             ):
                 run_end += 1
             if run_end - cursor >= int(minimum_control_run):
@@ -6365,6 +6387,9 @@ def restart_control_boundary_labels(
     hinted = features.get(
         "restart_hinted_control_anchor", pd.Series(False, index=features.index)
     ).to_numpy(bool)
+    kickoff = features.get(
+        "kickoff_control_anchor", pd.Series(False, index=features.index)
+    ).to_numpy(bool)
     fallback = features.get(
         "restart_fallback_control_anchor", pd.Series(False, index=features.index)
     ).to_numpy(bool)
@@ -6377,9 +6402,13 @@ def restart_control_boundary_labels(
         ),
         errors="coerce",
     ).fillna(0.0).to_numpy(float)
-    eligible_control = hinted | (fallback if use_tracking_fallback else False)
-    eligible_control &= np.isin(anchor, ["H", "A"])
-    eligible_control &= confidence >= float(minimum_anchor_confidence)
+    restart_team = features.get(
+        "restart_control_anchor_team", pd.Series(None, index=features.index)
+    ).to_numpy(dtype=object)
+    control_team = np.where(np.isin(restart_team, ["H", "A"]), restart_team, anchor)
+    eligible_control = kickoff | hinted | (fallback if use_tracking_fallback else False)
+    eligible_control &= np.isin(control_team, ["H", "A"])
+    eligible_control &= kickoff | (confidence >= float(minimum_anchor_confidence))
 
     start = 0
     while start < n_frames:
@@ -6403,12 +6432,12 @@ def restart_control_boundary_labels(
             if not eligible_control[cursor]:
                 cursor += 1
                 continue
-            run_team = anchor[cursor]
+            run_team = control_team[cursor]
             run_end = cursor + 1
             while (
                 run_end < search_end
                 and eligible_control[run_end]
-                and anchor[run_end] == run_team
+                and control_team[run_end] == run_team
             ):
                 run_end += 1
             if run_end - cursor >= int(minimum_control_run):
@@ -6422,7 +6451,7 @@ def restart_control_boundary_labels(
             release_end = min(control_start, end)
             d_positions = np.flatnonzero(output[live_start:release_end] == "D")
             if d_positions.size:
-                output[live_start + d_positions] = anchor[control_start]
+                output[live_start + d_positions] = control_team[control_start]
         start = end
 
     output[~in_play] = "X"
@@ -6451,8 +6480,12 @@ def hierarchical_restart_fill_labels(
     context = features.get("restart_context", pd.Series(False, index=features.index)).to_numpy(bool)
     live = features.get("restart_live_boundary_anchor", pd.Series(False, index=features.index)).to_numpy(bool)
     hinted = features.get("restart_hinted_control_anchor", pd.Series(False, index=features.index)).to_numpy(bool)
+    kickoff = features.get("kickoff_control_anchor", pd.Series(False, index=features.index)).to_numpy(bool)
     fallback = features.get("restart_fallback_control_anchor", pd.Series(False, index=features.index)).to_numpy(bool)
     anchor = features.get("anchor_team", pd.Series(None, index=features.index)).to_numpy(object)
+    restart_team = features.get(
+        "restart_control_anchor_team", pd.Series(None, index=features.index)
+    ).to_numpy(object)
     confidence = pd.to_numeric(
         features.get("anchor_confidence_score", pd.Series(0.0, index=features.index)),
         errors="coerce",
@@ -6465,9 +6498,12 @@ def hierarchical_restart_fill_labels(
         scenario,
         ["UNKNOWN", "OCCLUDED", "BALL_IN_FLIGHT", "CONTESTED", "RECEPTION_CANDIDATE", "TRANSITION_CANDIDATE"],
     )
-    eligible_control = hinted | (fallback if use_tracking_fallback else False)
-    eligible_control &= np.isin(anchor, ["H", "A"])
-    eligible_control &= confidence >= float(minimum_anchor_confidence)
+    control_team_values = np.where(
+        np.isin(restart_team, ["H", "A"]), restart_team, anchor
+    )
+    eligible_control = kickoff | hinted | (fallback if use_tracking_fallback else False)
+    eligible_control &= np.isin(control_team_values, ["H", "A"])
+    eligible_control &= kickoff | (confidence >= float(minimum_anchor_confidence))
 
     start = 0
     while start < n_frames:
@@ -6489,9 +6525,9 @@ def hierarchical_restart_fill_labels(
             if not eligible_control[cursor]:
                 cursor += 1
                 continue
-            team = anchor[cursor]
+            team = control_team_values[cursor]
             run_end = cursor + 1
-            while run_end < search_end and eligible_control[run_end] and anchor[run_end] == team:
+            while run_end < search_end and eligible_control[run_end] and control_team_values[run_end] == team:
                 run_end += 1
             if run_end - cursor >= int(minimum_control_run):
                 control_start = cursor
