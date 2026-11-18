@@ -2126,6 +2126,7 @@ def add_boundary_anchor_features(
     restart_type = out.get("restart_type", pd.Series(None, index=out.index)).to_numpy(object)
     anchor = out.get("anchor_team", pd.Series(None, index=out.index)).to_numpy(object)
     restart_hint = out.get("restart_team_hint", pd.Series(None, index=out.index)).to_numpy(object)
+    closest_team = out.get("closest_team", pd.Series(None, index=out.index)).to_numpy(object)
 
     out_of_bounds = (
         ball_x.notna() & ball_y.notna()
@@ -2140,6 +2141,24 @@ def add_boundary_anchor_features(
     non_kickoff = ~kickoff
     dead_ball_boundary = set_piece & non_kickoff & low_motion
     restart_live_boundary = restart_context & restart_active
+    # The supplied Smart Tagging kickoff rows carry Team=N/A.  Infer the
+    # kickoff team once, at the first physically active frame, from the
+    # nearest-team observation; never spread that inference into pre-kickoff
+    # frames or use it for ordinary set pieces.
+    kickoff_team_inferred = np.full(len(out), None, dtype=object)
+    kickoff_context = restart_context & kickoff
+    kickoff_starts = np.flatnonzero(kickoff_context & ~np.r_[False, kickoff_context[:-1]])
+    kickoff_ends = np.flatnonzero(kickoff_context & ~np.r_[kickoff_context[1:], False])
+    for start, end in zip(kickoff_starts, kickoff_ends):
+        active_positions = np.flatnonzero(restart_live_boundary[start:end + 1])
+        if not active_positions.size:
+            continue
+        active_frame = start + int(active_positions[0])
+        team = closest_team[active_frame]
+        if team in {"H", "A"}:
+            kickoff_team_inferred[start:end + 1] = team
+    kickoff_hint_available = kickoff & np.isin(restart_hint, ["H", "A"])
+    kickoff_team = np.where(kickoff_hint_available, restart_hint, kickoff_team_inferred)
     # A kickoff is a special restart: once the ball is physically active, the
     # tagged restart team owns the first live frame immediately.  This is not
     # the same as treating the pre-kickoff interval as live; the activation
@@ -2147,7 +2166,7 @@ def add_boundary_anchor_features(
     kickoff_control = (
         restart_live_boundary
         & kickoff
-        & np.isin(restart_hint, ["H", "A"])
+        & np.isin(kickoff_team, ["H", "A"])
     )
     hinted_control = (
         restart_live_boundary
@@ -2161,16 +2180,17 @@ def add_boundary_anchor_features(
     out["low_motion_dead_ball_anchor"] = dead_ball_boundary
     out["restart_live_boundary_anchor"] = restart_live_boundary
     out["kickoff_control_anchor"] = kickoff_control
+    out["kickoff_team_inferred"] = kickoff_team_inferred
     out["restart_hinted_control_anchor"] = hinted_control
     out["restart_fallback_control_anchor"] = fallback_control
     out["restart_control_anchor_team"] = np.where(
         kickoff_control,
-        restart_hint,
+        kickoff_team,
         np.where(hinted_control | fallback_control, anchor, None),
     )
     out["boundary_anchor_source"] = np.select(
-        [kickoff_control, hinted_control, fallback_control, dead_ball_boundary, out_of_bounds],
-        ["KICKOFF_TEAM_ANCHOR", "RESTART_HINTED_CONTROL", "RESTART_TRACKING_CONTROL", "DEAD_BALL_LOW_MOTION", "BALL_OUT_OF_PLAY"],
+        [kickoff_control & kickoff_hint_available, kickoff_control, hinted_control, fallback_control, dead_ball_boundary, out_of_bounds],
+        ["KICKOFF_TEAM_ANCHOR", "KICKOFF_TEAM_INFERRED_ANCHOR", "RESTART_HINTED_CONTROL", "RESTART_TRACKING_CONTROL", "DEAD_BALL_LOW_MOTION", "BALL_OUT_OF_PLAY"],
         default="NONE",
     )
     return out

@@ -300,9 +300,12 @@ def plot_trajectory_window(
             continue
         recency = (pos + 1) / max(1, len(obs_idx) - 1)
         ax.plot([bx.iloc[left], bx.iloc[right]], [by.iloc[left], by.iloc[right]],
-                color="#ffffff", linewidth=0.8 + 1.7 * recency,
-                alpha=0.25 + 0.75 * recency,
+                color="#102a43", linewidth=3.0 + 2.2 * recency,
+                alpha=0.9, zorder=5,
                 label="observed ball path" if pos == 0 else None)
+        ax.plot([bx.iloc[left], bx.iloc[right]], [by.iloc[left], by.iloc[right]],
+                color="#f8f9fa", linewidth=1.4 + 1.5 * recency,
+                alpha=0.55 + 0.4 * recency, zorder=6)
     if len(obs_idx):
         ax.scatter(bx.iloc[obs_idx], by.iloc[obs_idx], s=10,
                    color="#ffffff", edgecolor="#111111", linewidth=0.45,
@@ -315,9 +318,16 @@ def plot_trajectory_window(
     for left, right in zip(starts, ends):
         before, after = left - 1, right + 1
         if before >= 0 and after < len(window) and observed.iloc[before] and observed.iloc[after]:
+            first_gap = left == starts[0]
             ax.plot([bx.iloc[before], bx.iloc[after]], [by.iloc[before], by.iloc[after]],
-                    color="#d95f02", linestyle=(0, (2, 2)), linewidth=2.2,
-                    label="missing-ball displacement bridge" if left == starts[0] else None)
+                    color="#d95f02", linestyle=(0, (2, 2)), linewidth=2.8,
+                    label="last seen → next seen (missing-ball bridge)" if first_gap else None)
+            ax.scatter([bx.iloc[before]], [by.iloc[before]], s=82, marker="o",
+                       facecolor="#ffd166", edgecolor="#102a43", linewidth=1.2,
+                       zorder=9, label="last seen before gap" if first_gap else None)
+            ax.scatter([bx.iloc[after]], [by.iloc[after]], s=88, marker="D",
+                       facecolor="#ff7f0e", edgecolor="#102a43", linewidth=1.2,
+                       zorder=9, label="next seen after gap" if first_gap else None)
 
     # Direction arrows make the path readable without requiring tracks.
     visible = np.flatnonzero(observed.to_numpy())
@@ -644,7 +654,7 @@ def plot_evidence_window(
         for scenario, color in scenario_colors.items():
             mask = window["scenario_context"].eq(scenario).to_numpy()
             if mask.any():
-                timeline_ax.scatter(x[mask], np.full(mask.sum(), 1.25), s=14,
+                timeline_ax.scatter(x[mask], np.full(mask.sum(), 1.0), s=14,
                                     color=color, label=f"scenario: {scenario}")
     if "transition_anchor" in window:
         mask = window["transition_anchor"].fillna(False).to_numpy(bool)
@@ -768,7 +778,7 @@ def plot_timeline_window(
         for scenario, color in scenario_colors.items():
             mask = window["scenario_context"].eq(scenario).to_numpy()
             if mask.any():
-                ax.scatter(x[mask], np.full(mask.sum(), 1.25), s=14,
+                ax.scatter(x[mask], np.full(mask.sum(), 1.0), s=14,
                            color=color, label=f"scenario: {scenario}")
     if "transition_anchor" in window:
         mask = window["transition_anchor"].fillna(False).to_numpy(bool)
@@ -911,8 +921,21 @@ def plot_transition_signals_window(
                  alpha=0.8, label="distance in kick episode")
     axes[3].set_ylabel("distance (m)")
     impulse = axes[3].twinx()
+    missing_ball = (
+        window.get("ball_x", pd.Series(np.nan, index=window.index)).isna()
+        | window.get("ball_y", pd.Series(np.nan, index=window.index)).isna()
+    ).any()
+    source_values = set(window.get("kick_episode_observation_source", pd.Series(dtype=object)).dropna().astype(str))
+    if "GEORGE" in source_values:
+        impulse_label = "kick/contact candidate — George-supported"
+    elif "KALMAN" in source_values:
+        impulse_label = "kick/contact candidate — Kalman-supported"
+    elif missing_ball:
+        impulse_label = "kick/contact candidate — observed edge evidence"
+    else:
+        impulse_label = "kick/contact candidate — observed"
     impulse.plot(x, series("kick_episode_contact_change"), color="#e7298a",
-                 marker=".", markersize=3, alpha=0.8, label="candidate kick impulse")
+                 marker=".", markersize=3, alpha=0.8, label=impulse_label)
     impulse.set_ylabel("impulse (0–1)")
     axes[3].set_xlabel("tactical frame")
 
